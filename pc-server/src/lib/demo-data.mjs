@@ -1,0 +1,112 @@
+export const demoSearchResponse = {
+  query: "Harry Potter",
+  mode: "all",
+  nearby: [
+    {
+      id: "listing-demo-1",
+      ownerPetName: "mango7",
+      ownerRole: "reader",
+      title: "Harry Potter and the Sorcerer's Stone",
+      author: "J.K. Rowling",
+      listingType: "sell",
+      price: 299,
+      distanceKm: 2.3,
+      coverUrl: "https://covers.openlibrary.org/b/isbn/0590353403-L.jpg",
+      city: "Bengaluru",
+    },
+    {
+      id: "listing-demo-2",
+      ownerPetName: "cat12",
+      ownerRole: "reader",
+      title: "Harry Potter and the Chamber of Secrets",
+      author: "J.K. Rowling",
+      listingType: "exchange",
+      price: null,
+      distanceKm: 4.8,
+      coverUrl: "https://covers.openlibrary.org/b/isbn/0439064872-L.jpg",
+      city: "Bengaluru",
+    },
+  ],
+  sellers: [
+    {
+      id: "listing-demo-3",
+      ownerPetName: "booknest",
+      ownerRole: "seller",
+      title: "Harry Potter Box Set",
+      author: "J.K. Rowling",
+      listingType: "sell",
+      price: 1999,
+      distanceKm: 6.2,
+      coverUrl: "https://covers.openlibrary.org/b/isbn/1408856778-L.jpg",
+      city: "Bengaluru",
+    },
+  ],
+  libraries: [
+    {
+      id: "listing-demo-4",
+      ownerPetName: "moonlibrary",
+      ownerRole: "library",
+      title: "Harry Potter Collection",
+      author: "J.K. Rowling",
+      listingType: "library",
+      price: null,
+      distanceKm: 8.7,
+      coverUrl: "https://covers.openlibrary.org/b/isbn/0747532745-L.jpg",
+      city: "Bengaluru",
+    },
+  ],
+  onlinePrices: [
+    { store: "Amazon", price: 349, url: "https://www.amazon.in/" },
+    { store: "Flipkart", price: 329, url: "https://www.flipkart.com/" },
+  ],
+};
+
+export const demoProfile = {
+  petName: "mango7",
+  email: "preview@bookhug.app",
+  avatarUrl: "",
+  city: "Bengaluru",
+  role: "reader",
+  storeName: null,
+  libraryName: null,
+  libraryStatus: null,
+  listings: [
+    {
+      id: "listing-demo-1",
+      title: "The Hobbit",
+      author: "J.R.R. Tolkien",
+      listingType: "sell",
+      price: 249,
+      status: "available",
+      coverUrl: "https://covers.openlibrary.org/b/isbn/0547928227-L.jpg",
+    },
+    {
+      id: "listing-demo-2",
+      title: "Wonder",
+      author: "R.J. Palacio",
+      listingType: "exchange",
+      price: null,
+      status: "available",
+      coverUrl: "https://covers.openlibrary.org/b/isbn/0375869026-L.jpg",
+    },
+  ],
+};
+
+export const demoNotifications = [
+  {
+    id: "notif-1",
+    type: "buy_request_received",
+    title: "New buy request",
+    body: "cat12 wants to buy The Hobbit.",
+    isRead: false,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "notif-2",
+    type: "exchange_request_sent",
+    title: "Exchange request sent",
+    body: "Your request for Wonder was sent to sunflower3.",
+    isRead: true,
+    createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+  },
+];
