@@ -8,6 +8,8 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "backend": "node pc-server/src/server.mjs",
+    "backend:setup-db": "node pc-server/src/setup-db.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
