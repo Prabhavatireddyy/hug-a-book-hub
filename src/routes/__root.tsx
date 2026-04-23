@@ -1,4 +1,7 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+import { NotificationCenter } from "@/components/notification-center";
+import { Toaster } from "@/components/ui/sonner";
+import { BookHugAuthProvider } from "@/lib/bookhug-auth";
 
 import appCss from "../styles.css?url";
 
@@ -29,18 +32,16 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Bookish Buddies is a web application for discovering, buying, selling, and exchanging books with nearby users." },
+      { title: "BookHug — Cozy local book exchange" },
+      { name: "description", content: "BookHug helps readers, sellers, and libraries buy, sell, and exchange books through your own self-hosted backend." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Bookish Buddies is a web application for discovering, buying, selling, and exchanging books with nearby users." },
+      { property: "og:title", content: "BookHug — Cozy local book exchange" },
+      { property: "og:description", content: "BookHug helps readers, sellers, and libraries buy, sell, and exchange books through your own self-hosted backend." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "Lovable App" },
-      { name: "twitter:description", content: "Bookish Buddies is a web application for discovering, buying, selling, and exchanging books with nearby users." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/46ebcf96-7b5d-495e-8dbf-dd404f6aa2fc/id-preview-038d2c32--fe4cc481-f9fc-48fd-9e9c-b61149b7c1bf.lovable.app-1776704123611.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/46ebcf96-7b5d-495e-8dbf-dd404f6aa2fc/id-preview-038d2c32--fe4cc481-f9fc-48fd-9e9c-b61149b7c1bf.lovable.app-1776704123611.png" },
+      { name: "twitter:title", content: "BookHug — Cozy local book exchange" },
+      { name: "twitter:description", content: "BookHug helps readers, sellers, and libraries buy, sell, and exchange books through your own self-hosted backend." },
     ],
     links: [
       {
@@ -69,5 +70,11 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
-  return <Outlet />;
+  return (
+    <BookHugAuthProvider>
+      <Outlet />
+      <NotificationCenter />
+      <Toaster richColors position="top-right" />
+    </BookHugAuthProvider>
+  );
 }
