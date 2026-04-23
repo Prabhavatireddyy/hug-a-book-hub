@@ -1,97 +1,236 @@
 
-# 📚 BookHug — A Cute Book Exchange Platform
+## Goal
+Set up a real self-hosted backend on your PC for BookHug, connect it to a MySQL database, and prepare the frontend to talk to that backend while keeping Google/Gmail login as part of the architecture.
 
-A loveable, huggable book platform where readers, sellers, and libraries connect to **buy, sell, and exchange** books with people nearby. No real names — just adorable pet usernames like `cat1`, `sunflower3`, `mango7` 🌸
+## Important architecture decision
+Because you want to host from your own PC, the clean setup is:
 
----
+```text
+BookHug frontend (this TanStack app)
+        |
+        | HTTPS API requests
+        v
+Your PC backend server
+(Node.js + Express)
+        |
+        v
+MySQL on your PC
+        |
+        v
+Local uploads folder for book photos
+```
 
-## 🎨 Design Direction
-- **Vibe**: Soft, cute, cozy — pastel palette (warm peach, soft mint, butter yellow, blush pink), rounded corners, gentle shadows, playful book/animal illustrations
-- **Typography**: Friendly rounded headings (e.g. Quicksand / Fredoka), readable body
-- **Micro-delight**: 🎉 Confetti ribbons shoot from the top on first landing, gentle hover bounces on book cards, heart-pulse on CTA buttons
+Google login needs backend because the backend must:
+- receive the Google OAuth callback
+- verify Google tokens safely
+- create/login users in your database
+- create a session or issue an auth token
+- protect private routes and actions
 
----
+So yes: if you want Google login with your own PC-hosted app, your PC server is the right place for it.
 
-## 🏠 Page 1 — Landing Page (`/`)
-- **Confetti party ribbon burst** on page load (canvas-confetti)
-- Cute hero: *"Find your next book hug 🤗"* + tagline + big "Get Started" button
-- **"Most Read on the Internet"** carousel — curated list of ~12 famous books (covers, titles, author) hand-picked
-- Three cute role cards: 📖 Reader · 🏪 Book Seller · 📚 Library Owner
-- Footer with cozy "Made with ♥" note
+## What to build
 
-## 🔐 Page 2 — Login & Onboarding (`/login`, `/onboarding`)
-- **Sign in with Google** (single button, big and friendly)
-- After Google auth → role selection screen (Reader / Seller / Library)
-- **Pet username picker**:
-  - Category chips: 🌸 Flowers · 🍓 Fruits · 🐱 Animals · 🌟 Other
-  - Live availability check → auto-suffix unique number (`cat` → `cat12`)
-  - Real name **never displayed anywhere** — only the petname
-- Role-specific extra fields:
-  - **Reader** → just petname
-  - **Seller** → store name + city
-  - **Library** → library name + city → marked **"Pending verification"** (can browse but not list books)
-- **Cute location permission modal**: *"We need your location to find book buddies near you! 🗺️🐾 Pretty please?"* — required to proceed
+### Phase A — Backend foundation on your PC
+Create a separate backend service for local hosting:
+- Node.js + Express API
+- MySQL connection layer
+- environment/config support for local machine setup
+- CORS support so the Lovable frontend can call your PC API
+- health-check route to confirm the connection works
 
-## 🌟 Page 3 — Reader Onboarding Questions (`/onboarding/reader-questions`)
-After signup, readers answer 3 sweet questions:
-1. **Books to sell?** → title + photo upload + price → "Ready to sell 💸"
-2. **Books to exchange?** → title + photo upload → "Ready to exchange 🔄"
-3. **Looking for a book?** → search bar + radius selector (5 / 10 / 20 km)
+Backend endpoints to add first:
+- `GET /api/health`
+- `POST /api/auth/google/start`
+- `GET /api/auth/google/callback`
+- `GET /api/me`
+- `POST /api/logout`
 
-(Skippable, can be filled later from dashboard)
+## Phase B — MySQL database design
+Create database tables for your planned app.
 
-## 🏡 Page 4 — Home Dashboard (`/home`)
-- Header with petname + cute avatar
-- Quick action tiles: "List a book", "Search a book", "My listings", "Messages (placeholder)"
-- "Books near you" feed based on location
+### Core tables
+- `users`
+  - id
+  - google_id
+  - email
+  - pet_name
+  - avatar_url
+  - location_city
+  - latitude
+  - longitude
+  - created_at
+- `user_roles`
+  - id
+  - user_id
+  - role (`reader`, `seller`, `library`, `admin`)
+- `seller_profiles`
+  - user_id
+  - store_name
+  - city
+- `library_profiles`
+  - user_id
+  - library_name
+  - city
+  - verification_status (`pending`, `approved`, `rejected`)
+- `book_listings`
+  - id
+  - owner_id
+  - title
+  - author
+  - category
+  - condition
+  - listing_type (`sell`, `exchange`)
+  - price
+  - photo_path
+  - status
+  - created_at
+- `notifications`
+  - id
+  - user_id
+  - type
+  - title
+  - body
+  - is_read
+  - created_at
+- `requests`
+  - id
+  - from_user_id
+  - to_user_id
+  - listing_id
+  - request_type (`buy`, `exchange`)
+  - status
+  - created_at
 
-## 🔍 Page 5 — Search Results (`/search?q=...`)
-Three-mode toggle at top:
-1. **Buy from a nearby reader**
-2. **Buy from a seller**
-3. **Exchange with a nearby reader**
+### Security rule
+Roles will be stored in `user_roles`, not on the profile row.
 
-Layout (split view):
-- **Left ~65%** — scrollable results section:
-  - **Readers section** — cards with `petname · book title · ready to sell/exchange · price · photo · distance`
-  - **Sellers section** — cards with store name (petname format) + price + photo
-  - **Library section** — appears when no readers found
-- **Right ~35%** — vertical "Online prices" sidebar:
-  - Amazon — placeholder price + "View on Amazon" link
-  - Flipkart — placeholder price + "View on Flipkart" link
-  - (Real prices wired in a follow-up)
-- Empty state: cute "No book buddies here yet 🥲" illustration + fallback to library/seller/online
+## Phase C — Google login on your PC backend
+Implement Google OAuth in the backend:
+- redirect user from frontend to backend Google login start route
+- backend sends user to Google consent page
+- Google redirects back to your PC backend callback URL
+- backend creates or finds the user in MySQL
+- backend creates session cookie or returns secure token
+- frontend uses that authenticated session to load profile data
 
-## 📖 Page 6 — My Listings (`/my-books`)
-- Tabs: For Sale · For Exchange · Wishlist
-- Add / edit / remove listings with photo upload
+### Required setup outside code
+You will need:
+- Google Cloud Console OAuth client
+- authorized redirect URL pointing to your PC backend public HTTPS URL
+- a public HTTPS tunnel/domain to your PC backend
 
-## 👤 Page 7 — Public Profile (`/u/$petname`)
-- Shows petname, role badge, city (sellers/libraries only), their listings
-- **Zero personally identifiable info** displayed
+## Phase D — Make your PC reachable from the internet
+Since your frontend is not running inside your home network, your backend must be public.
 
----
+Recommended:
+- use Cloudflare Tunnel for HTTPS access to your PC backend
 
-## 🗄️ Data Model (Lovable Cloud)
-- `profiles` — id (auth uid), petname (unique), role, city (nullable), store_name (nullable), library_name (nullable), library_status ('pending' | 'verified'), latitude, longitude, created_at
-- `user_roles` — separate table (id, user_id, role: 'reader' | 'seller' | 'library' | 'admin')
-- `books` — id, owner_id, title, photo_url, type ('sell' | 'exchange'), price (nullable), status ('available' | 'sold' | 'reserved'), created_at
-- `wishlist` — id, user_id, book_title, search_radius_km
-- **Storage bucket**: `book-photos` (public read, owner write) for real photo uploads
-- **RLS**: profiles readable by all (only public fields exposed via view), books readable by all, only owner can write; libraries cannot insert into `books` until status = 'verified'
+This gives:
+- a stable HTTPS URL
+- no raw port exposure
+- a URL Google OAuth can use for callback
 
-## 🔑 Auth & Security
-- Google OAuth via Lovable Cloud
-- `has_role()` security-definer function for role checks (no role data on profiles table)
-- Petname uniqueness enforced at DB level + auto-suffix on conflict
-- Real names from Google never shown — only petname displayed everywhere
+Without this, Google login and frontend-to-backend connection will not work reliably.
 
-## 🚦 Build Order (incremental)
-1. **Phase 1**: Landing page with confetti + curated most-read books + design system
-2. **Phase 2**: Lovable Cloud + Google auth + onboarding flow (role + petname + location)
-3. **Phase 3**: Reader question flow + book listing (with photo upload to Cloud Storage)
-4. **Phase 4**: Search page with 3 modes + nearby distance filter + split layout with online price sidebar
-5. **Phase 5**: My Listings + public profile pages
-6. **Phase 6**: Admin verification view for libraries (later polish)
+## Phase E — Frontend integration in this TanStack app
+Add frontend app wiring for the self-hosted backend:
+- API base URL config
+- auth client helper for calling your PC backend
+- login page button: “Continue with Google”
+- route guards / session bootstrap
+- onboarding flow submits to MySQL backend instead of mock state
 
-We'll start with **Phase 1** so you can see and feel the cute landing page first 🎀
+### Frontend routes to wire next
+- `/login`
+- `/onboarding`
+- `/home`
+- `/u/$petname`
+- notification panel data source
+
+## Phase F — Onboarding data flow
+After Google login:
+1. user lands on role selection
+2. chooses Reader / Seller / Library
+3. chooses pet username
+4. grants location
+5. backend saves profile to MySQL
+6. if Library: mark verification as `pending`
+7. user enters app
+
+### Role behavior
+- Reader: basic pet profile
+- Seller: store name + city
+- Library: library name + city + pending verification
+- Library users can browse immediately but cannot create listings until approved
+
+## Phase G — Photos stored on your PC
+For book photos:
+- backend accepts image upload
+- save file in local folder on your PC
+- store relative file path in MySQL
+- expose uploaded images through backend static route
+
+Example:
+```text
+/uploads/book-photos/abc123.jpg
+```
+
+Later, if needed, this can be swapped to S3 or cloud storage.
+
+## Phase H — Search and notifications backend
+Prepare API routes for the pages you already want:
+- `GET /api/search`
+- `GET /api/users/:petName`
+- `GET /api/notifications`
+- `POST /api/requests/buy`
+- `POST /api/requests/exchange`
+
+Search response should support:
+- nearby readers
+- sellers
+- libraries fallback
+- right-side placeholder Amazon/Flipkart pricing data
+
+## Files and areas to add in this project later
+Frontend app:
+- new route files in `src/routes/` for login, onboarding, home, profile
+- reusable UI components for onboarding, split search layout, notifications
+- client-side API helper module
+- local session/auth state provider in `src/`
+
+Separate backend project/service:
+- server entry file
+- auth routes
+- user/profile routes
+- listings routes
+- notification routes
+- MySQL schema/migrations
+- uploads middleware
+
+## Implementation order
+1. Create backend folder/service structure
+2. Connect MySQL on your PC
+3. Create schema and tables
+4. Add health endpoint and frontend API config
+5. Add Google OAuth backend flow
+6. Add session handling
+7. Connect login/onboarding UI to backend
+8. Add listings, search, profile, notifications APIs
+9. Add local file upload handling
+10. Test end-to-end with your public tunnel URL
+
+## Technical notes
+- The current Lovable app has only the landing page route so far; login, home, profile, and notification views still need to be added.
+- The frontend is already styled for the cute pastel BookHug theme, so new pages should follow the existing design tokens in `src/styles.css`.
+- Since this project currently has no backend integration, the PC-hosted server should be treated as a separate API service rather than trying to connect MySQL directly from browser code.
+- Browser code must never connect directly to MySQL; only the backend server should talk to MySQL.
+- If you later want the whole app hosted from your PC, we can also move the frontend build output behind the same server/tunnel.
+
+## Result after this phase
+You will have:
+- a real MySQL-backed backend running on your PC
+- a public HTTPS URL pointing to your PC server
+- Google login architecture ready for self-hosting
+- frontend pages ready to connect to your own backend instead of Lovable Cloud
+- a clean path to build listings, search, profiles, and notifications on top of your own infrastructure
