@@ -9,6 +9,7 @@ type AuthContextValue = {
   hasCompletedOnboarding: boolean;
   backendUrl: string;
   refreshSession: () => Promise<void>;
+  applyUser: (user: SessionUser) => void;
   startGoogleLogin: (redirectTo?: string) => Promise<void>;
   completeOnboarding: (payload: OnboardingPayload) => Promise<void>;
   logout: () => Promise<void>;
