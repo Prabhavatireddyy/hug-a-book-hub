@@ -46,7 +46,9 @@ export type PublicProfile = {
   petName: string;
   email?: string;
   avatarUrl?: string;
+  bio?: string | null;
   city?: string | null;
+  address?: string | null;
   role?: BookHugRole | null;
   storeName?: string | null;
   libraryName?: string | null;
@@ -59,6 +61,7 @@ export type PublicProfile = {
     price?: number | null;
     status?: string;
     coverUrl?: string | null;
+    exchangeAddress?: string | null;
   }>;
 };
 
@@ -87,8 +90,18 @@ export type MyListing = {
   price?: number | null;
   status?: string;
   coverUrl?: string | null;
+  exchangeAddress?: string | null;
   createdAt?: string;
 };
+
+export type VerifyLocationResult = {
+  verified: boolean;
+  distanceKm: number | null;
+  geocodedLabel: string | null;
+  thresholdKm?: number;
+  message?: string;
+};
+
 
 const RAW_BACKEND_URL = import.meta.env.VITE_PC_BACKEND_URL?.trim();
 export const BOOKHUG_BACKEND_URL = (RAW_BACKEND_URL || "http://localhost:8788").replace(/\/$/, "");
