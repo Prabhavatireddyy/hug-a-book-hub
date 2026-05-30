@@ -501,6 +501,113 @@ app.post("/api/requests/:type", async (req, res) => {
   return res.json({ ok: true, requestId: result.insertId, toPetName: listing.toPetName });
 });
 
+app.get("/api/my/listings", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+
+  if (!hasDatabase()) {
+    return res.json({ listings: [] });
+  }
+
+  const listings = await query(
+    `SELECT id, title, author, listing_type AS listingType, price, status, photo_path AS coverUrl, created_at AS createdAt
+     FROM book_listings
+     WHERE owner_id = :ownerId
+     ORDER BY created_at DESC`,
+    { ownerId: session.user.id },
+  );
+
+  return res.json({ listings });
+});
+
+app.post("/api/listings", (req, res) => {
+  uploadBookPhoto(req, res, async (uploadError) => {
+    if (uploadError) {
+      return res.status(400).json({ error: uploadError.message || "Could not upload the photo." });
+    }
+
+    const session = getAuthedUser(req);
+    if (!session) {
+      return res.status(401).json({ error: "Sign in first" });
+    }
+
+    if (!hasDatabase()) {
+      return res.status(503).json({ error: "Database is not connected on the PC server yet." });
+    }
+
+    const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
+    const listingType = req.body?.listingType === "exchange" ? "exchange" : "sell";
+    const rawPrice = Number(req.body?.price);
+    const price = listingType === "sell" && Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : null;
+
+    if (!title) {
+      return res.status(400).json({ error: "Book name is required." });
+    }
+    if (listingType === "sell" && !price) {
+      return res.status(400).json({ error: "A valid price is required to sell a book." });
+    }
+
+    const coverUrl = req.file ? photoUrlFor(req.file.filename) : null;
+
+    const result = await query(
+      `INSERT INTO book_listings (owner_id, title, author, listing_type, price, photo_path, status)
+       VALUES (:ownerId, :title, :author, :listingType, :price, :photoPath, 'available')`,
+      {
+        ownerId: session.user.id,
+        title,
+        author: author || null,
+        listingType,
+        price,
+        photoPath: coverUrl,
+      },
+    );
+
+    return res.json({
+      listing: {
+        id: result.insertId,
+        title,
+        author: author || null,
+        listingType,
+        price,
+        status: "available",
+        coverUrl,
+      },
+    });
+  });
+});
+
+app.delete("/api/listings/:id", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+
+  if (!hasDatabase()) {
+    return res.status(503).json({ error: "Database is not connected on the PC server yet." });
+  }
+
+  const listingId = Number(req.params.id ?? 0);
+  if (!Number.isInteger(listingId) || listingId <= 0) {
+    return res.status(400).json({ error: "Invalid listing id." });
+  }
+
+  const result = await query(
+    `DELETE FROM book_listings WHERE id = :listingId AND owner_id = :ownerId`,
+    { listingId, ownerId: session.user.id },
+  );
+
+  if (!result.affectedRows) {
+    return res.status(404).json({ error: "Book not found or not yours." });
+  }
+
+  return res.json({ ok: true });
+});
+
+
+
 app.get("/", (_req, res) => {
   res.type("text/plain").send("BookHug PC server is running.");
 });
