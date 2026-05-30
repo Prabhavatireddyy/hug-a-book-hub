@@ -57,6 +57,10 @@ export function BookHugAuthProvider({ children }: { children: ReactNode }) {
     toast.success("Signed out from BookHug.");
   }, []);
 
+  const applyUser = useCallback((nextUser: SessionUser) => {
+    setUser(nextUser);
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -65,11 +69,12 @@ export function BookHugAuthProvider({ children }: { children: ReactNode }) {
       hasCompletedOnboarding: Boolean(user?.role),
       backendUrl: bookhugApi.backendUrl,
       refreshSession,
+      applyUser,
       startGoogleLogin,
       completeOnboarding,
       logout,
     }),
-    [user, loading, refreshSession, startGoogleLogin, completeOnboarding, logout],
+    [user, loading, refreshSession, applyUser, startGoogleLogin, completeOnboarding, logout],
   );
 
   return <BookHugAuthContext.Provider value={value}>{children}</BookHugAuthContext.Provider>;
