@@ -72,6 +72,17 @@ export type OnboardingPayload = {
   libraryName?: string;
 };
 
+export type MyListing = {
+  id: number | string;
+  title: string;
+  author?: string | null;
+  listingType: "sell" | "exchange" | "library";
+  price?: number | null;
+  status?: string;
+  coverUrl?: string | null;
+  createdAt?: string;
+};
+
 const RAW_BACKEND_URL = import.meta.env.VITE_PC_BACKEND_URL?.trim();
 export const BOOKHUG_BACKEND_URL = (RAW_BACKEND_URL || "http://localhost:8788").replace(/\/$/, "");
 
@@ -145,6 +156,20 @@ export const bookhugApi = {
     return requestJson<{ ok: boolean; requestId?: number | string; toPetName?: string }>(`/api/requests/${type}`, {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+  async getMyListings() {
+    return requestJson<{ listings: MyListing[] }>("/api/my/listings");
+  },
+  async createListing(formData: FormData) {
+    return requestJson<{ listing: MyListing }>("/api/listings", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  async deleteListing(id: number | string) {
+    return requestJson<{ ok: boolean }>(`/api/listings/${id}`, {
+      method: "DELETE",
     });
   },
 };
