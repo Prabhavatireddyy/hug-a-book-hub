@@ -4,7 +4,10 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) NOT NULL UNIQUE,
   pet_name VARCHAR(80) NOT NULL UNIQUE,
   avatar_url TEXT NULL,
+  bio TEXT NULL,
   location_city VARCHAR(120) NULL,
+  address TEXT NULL,
+  address_verified TINYINT(1) NOT NULL DEFAULT 0,
   latitude DECIMAL(10, 7) NULL,
   longitude DECIMAL(10, 7) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -43,6 +46,7 @@ CREATE TABLE IF NOT EXISTS book_listings (
   `condition` VARCHAR(80) NULL,
   listing_type ENUM('sell', 'exchange', 'library') NOT NULL,
   price DECIMAL(10, 2) NULL,
+  exchange_address TEXT NULL,
   photo_path TEXT NULL,
   status ENUM('available', 'sold', 'reserved') NOT NULL DEFAULT 'available',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
