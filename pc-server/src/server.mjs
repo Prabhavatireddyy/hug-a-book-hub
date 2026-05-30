@@ -368,8 +368,23 @@ app.get("/api/me", async (req, res) => {
     return res.status(401).json({ error: "Not signed in" });
   }
 
-  const roleDetails = session.user?.id ? await fetchRoleDetails(session.user.id) : {};
-  return res.json({ user: { ...session.user, ...roleDetails } });
+  if (!session.user?.id) {
+    return res.json({ user: session.user });
+  }
+
+  const [roleDetails, extras] = await Promise.all([
+    fetchRoleDetails(session.user.id),
+    fetchProfileExtras(session.user.id),
+  ]);
+  const role = roleDetails.role ?? session.user.role ?? "reader";
+  return res.json({
+    user: {
+      ...session.user,
+      ...roleDetails,
+      ...extras,
+      listingLimit: listingLimitFor(role),
+    },
+  });
 });
 
 app.post("/api/logout", (req, res) => {
