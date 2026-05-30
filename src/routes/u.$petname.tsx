@@ -154,6 +154,11 @@ function PublicProfilePage() {
                     </div>
                     <h2 className="mt-3 font-display text-2xl font-bold text-foreground">{listing.title}</h2>
                     <p className="text-sm text-muted-foreground">{listing.author || "Author not listed"}</p>
+                    {listing.listingType === "exchange" && listing.exchangeAddress ? (
+                      <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+                        <MapPin className="mt-0.5 size-3.5 shrink-0" /> {listing.exchangeAddress}
+                      </p>
+                    ) : null}
                     <p className="mt-3 font-display text-xl font-semibold text-foreground">
                       {listing.price ? `₹${listing.price}` : "Ask to exchange"}
                     </p>
