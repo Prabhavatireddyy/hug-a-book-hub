@@ -666,7 +666,8 @@ app.get("/api/users/:petName", async (req, res) => {
   }
 
   const users = await query(
-    `SELECT id, pet_name AS petName, email, avatar_url AS avatarUrl, location_city AS city
+    `SELECT id, pet_name AS petName, email, avatar_url AS avatarUrl, location_city AS city,
+            bio, address
      FROM users
      WHERE pet_name = :petName
      LIMIT 1`,
@@ -681,7 +682,8 @@ app.get("/api/users/:petName", async (req, res) => {
   const [roleDetails, listings] = await Promise.all([
     fetchRoleDetails(user.id),
     query(
-      `SELECT id, title, author, listing_type AS listingType, price, status, photo_path AS coverUrl
+      `SELECT id, title, author, listing_type AS listingType, price, status,
+              photo_path AS coverUrl, exchange_address AS exchangeAddress
        FROM book_listings
        WHERE owner_id = :ownerId
        ORDER BY created_at DESC`,
