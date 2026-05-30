@@ -295,6 +295,36 @@ async function fetchProfileExtras(userId) {
   };
 }
 
+// Add a one-time reminder to verify location if the address isn't verified yet.
+async function maybeNudgeAddressVerification(userId) {
+  if (!hasDatabase()) return;
+  try {
+    const rows = await query(
+      `SELECT address_verified AS addressVerified FROM users WHERE id = :userId LIMIT 1`,
+      { userId },
+    );
+    if (Boolean(rows[0]?.addressVerified)) return;
+
+    const existing = await query(
+      `SELECT id FROM notifications WHERE user_id = :userId AND type = 'verify_location' LIMIT 1`,
+      { userId },
+    );
+    if (existing[0]) return;
+
+    await query(
+      `INSERT INTO notifications (user_id, type, title, body, is_read)
+       VALUES (:userId, 'verify_location', :title, :body, false)`,
+      {
+        userId,
+        title: "Verify your location",
+        body: "Open My Profile, then Save & confirm your address. If it's wrong, search will show books, readers, libraries and sellers near the address you typed instead of where you really are.",
+      },
+    );
+  } catch (error) {
+    console.error("Could not create location nudge", error);
+  }
+}
+
 app.get("/api/health", async (_req, res) => {
   const dbHealthy = await pingDatabase();
   res.json({
