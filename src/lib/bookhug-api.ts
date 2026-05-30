@@ -158,4 +158,18 @@ export const bookhugApi = {
       body: JSON.stringify(payload),
     });
   },
+  async getMyListings() {
+    return requestJson<{ listings: MyListing[] }>("/api/my/listings");
+  },
+  async createListing(formData: FormData) {
+    return requestJson<{ listing: MyListing }>("/api/listings", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  async deleteListing(id: number | string) {
+    return requestJson<{ ok: boolean }>(`/api/listings/${id}`, {
+      method: "DELETE",
+    });
+  },
 };
