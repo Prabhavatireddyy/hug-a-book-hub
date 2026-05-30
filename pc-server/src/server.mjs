@@ -784,7 +784,8 @@ app.get("/api/my/listings", async (req, res) => {
   }
 
   const listings = await query(
-    `SELECT id, title, author, listing_type AS listingType, price, status, photo_path AS coverUrl, created_at AS createdAt
+    `SELECT id, title, author, listing_type AS listingType, price, status,
+            photo_path AS coverUrl, exchange_address AS exchangeAddress, created_at AS createdAt
      FROM book_listings
      WHERE owner_id = :ownerId
      ORDER BY created_at DESC`,
@@ -822,17 +823,42 @@ app.post("/api/listings", (req, res) => {
       return res.status(400).json({ error: "A valid price is required to sell a book." });
     }
 
+    // Enforce per-role book limit.
+    const [roleDetails, extras] = await Promise.all([
+      fetchRoleDetails(session.user.id),
+      fetchProfileExtras(session.user.id),
+    ]);
+    const role = roleDetails.role ?? session.user.role ?? "reader";
+    const limit = listingLimitFor(role);
+    if (extras.listingCount >= limit) {
+      return res.status(403).json({
+        error: `You've reached your limit of ${limit} books for a ${role}. Remove a book before adding a new one.`,
+      });
+    }
+
+    // Exchange books use the user's one saved address.
+    let exchangeAddress = null;
+    if (listingType === "exchange") {
+      if (!extras.address) {
+        return res.status(400).json({
+          error: "Please save your address in My Profile before listing a book for exchange.",
+        });
+      }
+      exchangeAddress = extras.address;
+    }
+
     const coverUrl = req.file ? photoUrlFor(req.file.filename) : null;
 
     const result = await query(
-      `INSERT INTO book_listings (owner_id, title, author, listing_type, price, photo_path, status)
-       VALUES (:ownerId, :title, :author, :listingType, :price, :photoPath, 'available')`,
+      `INSERT INTO book_listings (owner_id, title, author, listing_type, price, exchange_address, photo_path, status)
+       VALUES (:ownerId, :title, :author, :listingType, :price, :exchangeAddress, :photoPath, 'available')`,
       {
         ownerId: session.user.id,
         title,
         author: author || null,
         listingType,
         price,
+        exchangeAddress,
         photoPath: coverUrl,
       },
     );
@@ -844,9 +870,12 @@ app.post("/api/listings", (req, res) => {
         author: author || null,
         listingType,
         price,
+        exchangeAddress,
         status: "available",
         coverUrl,
       },
+      listingCount: extras.listingCount + 1,
+      listingLimit: limit,
     });
   });
 });
