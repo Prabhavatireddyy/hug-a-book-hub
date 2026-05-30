@@ -34,9 +34,94 @@ const uploadBookPhoto = multer({
   },
 }).single("photo");
 
+const uploadAvatar = multer({
+  storage: uploadStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files are allowed."));
+    }
+  },
+}).single("avatar");
+
 function photoUrlFor(filename) {
   return `${serverConfig.publicBaseUrl.replace(/\/$/, "")}/uploads/${filename}`;
 }
+
+// Per-role book listing limits (kept small while the database is young).
+const LISTING_LIMITS = { reader: 20, seller: 100, library: 1000, admin: 5000 };
+function listingLimitFor(role) {
+  return LISTING_LIMITS[role] ?? LISTING_LIMITS.reader;
+}
+
+// Distance (km) between two GPS points using the haversine formula.
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Address match threshold (km). A typed address within this range of the
+// device GPS location counts as "verified".
+const ADDRESS_MATCH_KM = 20;
+
+// Geocode a free-text address via OpenStreetMap Nominatim (no API key).
+async function geocodeAddress(address) {
+  const params = new URLSearchParams({ format: "json", limit: "1", q: address });
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    headers: {
+      "User-Agent": "BookHug/1.0 (self-hosted book exchange app)",
+      "Accept-Language": "en",
+    },
+  });
+  if (!response.ok) {
+    throw new Error("Could not reach the address lookup service.");
+  }
+  const results = await response.json();
+  if (!Array.isArray(results) || results.length === 0) {
+    return null;
+  }
+  return {
+    latitude: Number(results[0].lat),
+    longitude: Number(results[0].lon),
+    label: String(results[0].display_name ?? ""),
+  };
+}
+
+// Add or upgrade columns for existing installs (idempotent).
+async function ensureSchemaUpgrades() {
+  if (!hasDatabase()) return;
+  const pool = await getPool();
+  const dbName = serverConfig.mysql.database;
+  const columnExists = async (table, column) => {
+    const [rows] = await pool.execute(
+      `SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      [dbName, table, column],
+    );
+    return Number(rows[0]?.c ?? 0) > 0;
+  };
+  const addColumn = async (table, column, definition) => {
+    if (!(await columnExists(table, column))) {
+      await pool.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      console.log(`Migration: added ${table}.${column}`);
+    }
+  };
+
+  await addColumn("users", "bio", "TEXT NULL");
+  await addColumn("users", "address", "TEXT NULL");
+  await addColumn("users", "address_verified", "TINYINT(1) NOT NULL DEFAULT 0");
+  await addColumn("book_listings", "exchange_address", "TEXT NULL");
+}
+
+
 
 
 const app = express();
