@@ -419,6 +419,117 @@ app.get("/api/me", async (req, res) => {
   });
 });
 
+app.post("/api/me/verify-location", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+
+  const address = typeof req.body?.address === "string" ? req.body.address.trim() : "";
+  const latitude = Number(req.body?.latitude);
+  const longitude = Number(req.body?.longitude);
+
+  if (!address) {
+    return res.status(400).json({ error: "Please enter your address first." });
+  }
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return res.status(400).json({ error: "We could not read your current location. Please allow location access." });
+  }
+
+  let geocoded;
+  try {
+    geocoded = await geocodeAddress(address);
+  } catch (error) {
+    return res.status(502).json({ error: error instanceof Error ? error.message : "Address lookup failed." });
+  }
+
+  if (!geocoded) {
+    return res.json({
+      verified: false,
+      distanceKm: null,
+      geocodedLabel: null,
+      message: "We couldn't find that address. Try adding your city and area.",
+    });
+  }
+
+  const distanceKm = haversineKm(latitude, longitude, geocoded.latitude, geocoded.longitude);
+  const verified = distanceKm <= ADDRESS_MATCH_KM;
+
+  return res.json({
+    verified,
+    distanceKm: Number(distanceKm.toFixed(1)),
+    geocodedLabel: geocoded.label,
+    thresholdKm: ADDRESS_MATCH_KM,
+    message: verified
+      ? "Your address matches your current location."
+      : `Your address is about ${distanceKm.toFixed(0)} km from where you are now. You can still save it, but nearby results will use this address.`,
+  });
+});
+
+app.patch("/api/me/profile", (req, res) => {
+  uploadAvatar(req, res, async (uploadError) => {
+    if (uploadError) {
+      return res.status(400).json({ error: uploadError.message || "Could not upload the avatar." });
+    }
+
+    const session = getAuthedUser(req);
+    if (!session) {
+      return res.status(401).json({ error: "Sign in first" });
+    }
+    if (!hasDatabase()) {
+      return res.status(503).json({ error: "Database is not connected on the PC server yet." });
+    }
+
+    const bio = typeof req.body?.bio === "string" ? req.body.bio.trim().slice(0, 600) : null;
+    const address = typeof req.body?.address === "string" ? req.body.address.trim().slice(0, 500) : null;
+    const rawLat = Number(req.body?.latitude);
+    const rawLng = Number(req.body?.longitude);
+    const latitude = Number.isFinite(rawLat) ? rawLat : null;
+    const longitude = Number.isFinite(rawLng) ? rawLng : null;
+    const addressVerified = String(req.body?.addressVerified) === "true" ? 1 : 0;
+    const avatarUrl = req.file ? photoUrlFor(req.file.filename) : null;
+
+    await query(
+      `UPDATE users
+       SET bio = :bio,
+           address = :address,
+           latitude = :latitude,
+           longitude = :longitude,
+           address_verified = :addressVerified
+           ${avatarUrl ? ", avatar_url = :avatarUrl" : ""}
+       WHERE id = :userId`,
+      {
+        bio,
+        address,
+        latitude,
+        longitude,
+        addressVerified,
+        userId: session.user.id,
+        ...(avatarUrl ? { avatarUrl } : {}),
+      },
+    );
+
+    const [roleDetails, extras] = await Promise.all([
+      fetchRoleDetails(session.user.id),
+      fetchProfileExtras(session.user.id),
+    ]);
+    const role = roleDetails.role ?? session.user.role ?? "reader";
+    const updatedUser = {
+      ...session.user,
+      ...roleDetails,
+      ...extras,
+      avatarUrl: avatarUrl ?? extras.avatarUrl ?? session.user.avatarUrl,
+      listingLimit: listingLimitFor(role),
+    };
+
+    const sessionId = req.cookies?.[serverConfig.sessionCookieName];
+    updateSessionUser(sessionId, updatedUser);
+
+    return res.json({ user: updatedUser });
+  });
+});
+
+
 app.post("/api/logout", (req, res) => {
   const sessionId = req.cookies?.[serverConfig.sessionCookieName];
   deleteSession(sessionId);
