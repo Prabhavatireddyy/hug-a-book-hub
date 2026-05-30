@@ -119,6 +119,9 @@ function PublicProfilePage() {
                     <Library className="size-4" /> {profile.libraryName}
                   </div>
                 ) : null}
+                {profile.bio ? (
+                  <div className="rounded-3xl bg-peach/40 px-4 py-3 text-sm text-foreground">{profile.bio}</div>
+                ) : null}
                 <div className="flex items-center gap-2 rounded-3xl bg-blush/50 px-4 py-3 text-sm text-blush-foreground">
                   <BadgeCheck className="size-4" /> No personal name or private details are shown here.
                 </div>
