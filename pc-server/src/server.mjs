@@ -14,6 +14,31 @@ import { createSession, deleteSession, getSession, updateSessionUser } from "./l
 
 mkdirSync(serverConfig.uploadsDir, { recursive: true });
 
+const uploadStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, serverConfig.uploadsDir),
+  filename: (_req, file, cb) => {
+    const ext = (extname(file.originalname || "") || ".jpg").toLowerCase();
+    cb(null, `${randomUUID()}${ext}`);
+  },
+});
+
+const uploadBookPhoto = multer({
+  storage: uploadStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files are allowed."));
+    }
+  },
+}).single("photo");
+
+function photoUrlFor(filename) {
+  return `${serverConfig.publicBaseUrl.replace(/\/$/, "")}/uploads/${filename}`;
+}
+
+
 const app = express();
 const googleClient = isGoogleConfigured()
   ? new OAuth2Client(
