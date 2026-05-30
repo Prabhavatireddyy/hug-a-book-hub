@@ -913,6 +913,10 @@ app.get("/", (_req, res) => {
   res.type("text/plain").send("BookHug PC server is running.");
 });
 
-app.listen(serverConfig.port, () => {
-  console.log(`BookHug PC server running on ${serverConfig.publicBaseUrl}`);
-});
+ensureSchemaUpgrades()
+  .catch((error) => console.error("Schema migration failed", error))
+  .finally(() => {
+    app.listen(serverConfig.port, () => {
+      console.log(`BookHug PC server running on ${serverConfig.publicBaseUrl}`);
+    });
+  });
