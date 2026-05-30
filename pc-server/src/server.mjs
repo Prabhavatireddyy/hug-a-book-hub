@@ -268,6 +268,33 @@ async function fetchRoleDetails(userId) {
   };
 }
 
+async function fetchProfileExtras(userId) {
+  if (!hasDatabase()) {
+    return { bio: null, address: null, addressVerified: false, listingCount: 0 };
+  }
+
+  const [userRows, countRows] = await Promise.all([
+    query(
+      `SELECT bio, address, address_verified AS addressVerified, avatar_url AS avatarUrl,
+              latitude, longitude
+       FROM users WHERE id = :userId LIMIT 1`,
+      { userId },
+    ),
+    query(`SELECT COUNT(*) AS listingCount FROM book_listings WHERE owner_id = :userId`, { userId }),
+  ]);
+
+  const row = userRows[0] ?? {};
+  return {
+    bio: row.bio ?? null,
+    address: row.address ?? null,
+    addressVerified: Boolean(row.addressVerified),
+    avatarUrl: row.avatarUrl ?? null,
+    latitude: row.latitude != null ? Number(row.latitude) : null,
+    longitude: row.longitude != null ? Number(row.longitude) : null,
+    listingCount: Number(countRows[0]?.listingCount ?? 0),
+  };
+}
+
 app.get("/api/health", async (_req, res) => {
   const dbHealthy = await pingDatabase();
   res.json({
