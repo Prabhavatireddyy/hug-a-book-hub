@@ -123,6 +123,11 @@ function HomePage() {
             {user?.role ? <Badge className="rounded-full px-3 py-1 capitalize">{user.role}</Badge> : null}
             {isAuthenticated ? (
               <>
+                <Button asChild className="rounded-full">
+                  <Link to="/profile">
+                    <BookOpen className="size-4" /> My Books
+                  </Link>
+                </Button>
                 <Button asChild variant="outline" className="rounded-full">
                   <Link to="/u/$petname" params={{ petname: user?.petName ?? "mango7" }}>
                     My profile
