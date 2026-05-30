@@ -182,9 +182,21 @@ export const bookhugApi = {
     return requestJson<{ listings: MyListing[] }>("/api/my/listings");
   },
   async createListing(formData: FormData) {
-    return requestJson<{ listing: MyListing }>("/api/listings", {
+    return requestJson<{ listing: MyListing; listingCount?: number; listingLimit?: number }>("/api/listings", {
       method: "POST",
       body: formData,
+    });
+  },
+  async updateProfile(formData: FormData) {
+    return requestJson<{ user: SessionUser }>("/api/me/profile", {
+      method: "PATCH",
+      body: formData,
+    });
+  },
+  async verifyLocation(payload: { address: string; latitude: number; longitude: number }) {
+    return requestJson<VerifyLocationResult>("/api/me/verify-location", {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
   },
   async deleteListing(id: number | string) {
