@@ -34,9 +34,94 @@ const uploadBookPhoto = multer({
   },
 }).single("photo");
 
+const uploadAvatar = multer({
+  storage: uploadStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files are allowed."));
+    }
+  },
+}).single("avatar");
+
 function photoUrlFor(filename) {
   return `${serverConfig.publicBaseUrl.replace(/\/$/, "")}/uploads/${filename}`;
 }
+
+// Per-role book listing limits (kept small while the database is young).
+const LISTING_LIMITS = { reader: 20, seller: 100, library: 1000, admin: 5000 };
+function listingLimitFor(role) {
+  return LISTING_LIMITS[role] ?? LISTING_LIMITS.reader;
+}
+
+// Distance (km) between two GPS points using the haversine formula.
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Address match threshold (km). A typed address within this range of the
+// device GPS location counts as "verified".
+const ADDRESS_MATCH_KM = 20;
+
+// Geocode a free-text address via OpenStreetMap Nominatim (no API key).
+async function geocodeAddress(address) {
+  const params = new URLSearchParams({ format: "json", limit: "1", q: address });
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    headers: {
+      "User-Agent": "BookHug/1.0 (self-hosted book exchange app)",
+      "Accept-Language": "en",
+    },
+  });
+  if (!response.ok) {
+    throw new Error("Could not reach the address lookup service.");
+  }
+  const results = await response.json();
+  if (!Array.isArray(results) || results.length === 0) {
+    return null;
+  }
+  return {
+    latitude: Number(results[0].lat),
+    longitude: Number(results[0].lon),
+    label: String(results[0].display_name ?? ""),
+  };
+}
+
+// Add or upgrade columns for existing installs (idempotent).
+async function ensureSchemaUpgrades() {
+  if (!hasDatabase()) return;
+  const pool = await getPool();
+  const dbName = serverConfig.mysql.database;
+  const columnExists = async (table, column) => {
+    const [rows] = await pool.execute(
+      `SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      [dbName, table, column],
+    );
+    return Number(rows[0]?.c ?? 0) > 0;
+  };
+  const addColumn = async (table, column, definition) => {
+    if (!(await columnExists(table, column))) {
+      await pool.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      console.log(`Migration: added ${table}.${column}`);
+    }
+  };
+
+  await addColumn("users", "bio", "TEXT NULL");
+  await addColumn("users", "address", "TEXT NULL");
+  await addColumn("users", "address_verified", "TINYINT(1) NOT NULL DEFAULT 0");
+  await addColumn("book_listings", "exchange_address", "TEXT NULL");
+}
+
+
 
 
 const app = express();
@@ -183,6 +268,63 @@ async function fetchRoleDetails(userId) {
   };
 }
 
+async function fetchProfileExtras(userId) {
+  if (!hasDatabase()) {
+    return { bio: null, address: null, addressVerified: false, listingCount: 0 };
+  }
+
+  const [userRows, countRows] = await Promise.all([
+    query(
+      `SELECT bio, address, address_verified AS addressVerified, avatar_url AS avatarUrl,
+              latitude, longitude
+       FROM users WHERE id = :userId LIMIT 1`,
+      { userId },
+    ),
+    query(`SELECT COUNT(*) AS listingCount FROM book_listings WHERE owner_id = :userId`, { userId }),
+  ]);
+
+  const row = userRows[0] ?? {};
+  return {
+    bio: row.bio ?? null,
+    address: row.address ?? null,
+    addressVerified: Boolean(row.addressVerified),
+    avatarUrl: row.avatarUrl ?? null,
+    latitude: row.latitude != null ? Number(row.latitude) : null,
+    longitude: row.longitude != null ? Number(row.longitude) : null,
+    listingCount: Number(countRows[0]?.listingCount ?? 0),
+  };
+}
+
+// Add a one-time reminder to verify location if the address isn't verified yet.
+async function maybeNudgeAddressVerification(userId) {
+  if (!hasDatabase()) return;
+  try {
+    const rows = await query(
+      `SELECT address_verified AS addressVerified FROM users WHERE id = :userId LIMIT 1`,
+      { userId },
+    );
+    if (Boolean(rows[0]?.addressVerified)) return;
+
+    const existing = await query(
+      `SELECT id FROM notifications WHERE user_id = :userId AND type = 'verify_location' LIMIT 1`,
+      { userId },
+    );
+    if (existing[0]) return;
+
+    await query(
+      `INSERT INTO notifications (user_id, type, title, body, is_read)
+       VALUES (:userId, 'verify_location', :title, :body, false)`,
+      {
+        userId,
+        title: "Verify your location",
+        body: "Open My Profile, then Save & confirm your address. If it's wrong, search will show books, readers, libraries and sellers near the address you typed instead of where you really are.",
+      },
+    );
+  } catch (error) {
+    console.error("Could not create location nudge", error);
+  }
+}
+
 app.get("/api/health", async (_req, res) => {
   const dbHealthy = await pingDatabase();
   res.json({
@@ -242,8 +384,10 @@ app.get("/api/auth/google/callback", async (req, res) => {
     const sessionUser = { ...user, ...roleDetails };
     const sessionId = createSession(sessionUser);
 
+    await maybeNudgeAddressVerification(user.id);
+
     res.cookie(serverConfig.sessionCookieName, sessionId, cookieOptions());
-    return res.redirect(new URL(state.redirectTo || "/onboarding", serverConfig.frontendOrigin || "http://localhost:3000").toString());
+    return res.redirect(new URL(state.redirectTo || "/onboarding", serverConfig.frontendOrigin || "http://localhost:5173").toString());
   } catch (error) {
     console.error("Google callback failed", error);
     return res.status(500).send("Google login failed. Check your OAuth callback URL and secrets.");
@@ -256,9 +400,135 @@ app.get("/api/me", async (req, res) => {
     return res.status(401).json({ error: "Not signed in" });
   }
 
-  const roleDetails = session.user?.id ? await fetchRoleDetails(session.user.id) : {};
-  return res.json({ user: { ...session.user, ...roleDetails } });
+  if (!session.user?.id) {
+    return res.json({ user: session.user });
+  }
+
+  const [roleDetails, extras] = await Promise.all([
+    fetchRoleDetails(session.user.id),
+    fetchProfileExtras(session.user.id),
+  ]);
+  const role = roleDetails.role ?? session.user.role ?? "reader";
+  return res.json({
+    user: {
+      ...session.user,
+      ...roleDetails,
+      ...extras,
+      listingLimit: listingLimitFor(role),
+    },
+  });
 });
+
+app.post("/api/me/verify-location", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+
+  const address = typeof req.body?.address === "string" ? req.body.address.trim() : "";
+  const latitude = Number(req.body?.latitude);
+  const longitude = Number(req.body?.longitude);
+
+  if (!address) {
+    return res.status(400).json({ error: "Please enter your address first." });
+  }
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return res.status(400).json({ error: "We could not read your current location. Please allow location access." });
+  }
+
+  let geocoded;
+  try {
+    geocoded = await geocodeAddress(address);
+  } catch (error) {
+    return res.status(502).json({ error: error instanceof Error ? error.message : "Address lookup failed." });
+  }
+
+  if (!geocoded) {
+    return res.json({
+      verified: false,
+      distanceKm: null,
+      geocodedLabel: null,
+      message: "We couldn't find that address. Try adding your city and area.",
+    });
+  }
+
+  const distanceKm = haversineKm(latitude, longitude, geocoded.latitude, geocoded.longitude);
+  const verified = distanceKm <= ADDRESS_MATCH_KM;
+
+  return res.json({
+    verified,
+    distanceKm: Number(distanceKm.toFixed(1)),
+    geocodedLabel: geocoded.label,
+    thresholdKm: ADDRESS_MATCH_KM,
+    message: verified
+      ? "Your address matches your current location."
+      : `Your address is about ${distanceKm.toFixed(0)} km from where you are now. You can still save it, but nearby results will use this address.`,
+  });
+});
+
+app.patch("/api/me/profile", (req, res) => {
+  uploadAvatar(req, res, async (uploadError) => {
+    if (uploadError) {
+      return res.status(400).json({ error: uploadError.message || "Could not upload the avatar." });
+    }
+
+    const session = getAuthedUser(req);
+    if (!session) {
+      return res.status(401).json({ error: "Sign in first" });
+    }
+    if (!hasDatabase()) {
+      return res.status(503).json({ error: "Database is not connected on the PC server yet." });
+    }
+
+    const bio = typeof req.body?.bio === "string" ? req.body.bio.trim().slice(0, 600) : null;
+    const address = typeof req.body?.address === "string" ? req.body.address.trim().slice(0, 500) : null;
+    const rawLat = Number(req.body?.latitude);
+    const rawLng = Number(req.body?.longitude);
+    const latitude = Number.isFinite(rawLat) ? rawLat : null;
+    const longitude = Number.isFinite(rawLng) ? rawLng : null;
+    const addressVerified = String(req.body?.addressVerified) === "true" ? 1 : 0;
+    const avatarUrl = req.file ? photoUrlFor(req.file.filename) : null;
+
+    await query(
+      `UPDATE users
+       SET bio = :bio,
+           address = :address,
+           latitude = :latitude,
+           longitude = :longitude,
+           address_verified = :addressVerified
+           ${avatarUrl ? ", avatar_url = :avatarUrl" : ""}
+       WHERE id = :userId`,
+      {
+        bio,
+        address,
+        latitude,
+        longitude,
+        addressVerified,
+        userId: session.user.id,
+        ...(avatarUrl ? { avatarUrl } : {}),
+      },
+    );
+
+    const [roleDetails, extras] = await Promise.all([
+      fetchRoleDetails(session.user.id),
+      fetchProfileExtras(session.user.id),
+    ]);
+    const role = roleDetails.role ?? session.user.role ?? "reader";
+    const updatedUser = {
+      ...session.user,
+      ...roleDetails,
+      ...extras,
+      avatarUrl: avatarUrl ?? extras.avatarUrl ?? session.user.avatarUrl,
+      listingLimit: listingLimitFor(role),
+    };
+
+    const sessionId = req.cookies?.[serverConfig.sessionCookieName];
+    updateSessionUser(sessionId, updatedUser);
+
+    return res.json({ user: updatedUser });
+  });
+});
+
 
 app.post("/api/logout", (req, res) => {
   const sessionId = req.cookies?.[serverConfig.sessionCookieName];
@@ -396,7 +666,8 @@ app.get("/api/users/:petName", async (req, res) => {
   }
 
   const users = await query(
-    `SELECT id, pet_name AS petName, email, avatar_url AS avatarUrl, location_city AS city
+    `SELECT id, pet_name AS petName, email, avatar_url AS avatarUrl, location_city AS city,
+            bio, address
      FROM users
      WHERE pet_name = :petName
      LIMIT 1`,
@@ -411,7 +682,8 @@ app.get("/api/users/:petName", async (req, res) => {
   const [roleDetails, listings] = await Promise.all([
     fetchRoleDetails(user.id),
     query(
-      `SELECT id, title, author, listing_type AS listingType, price, status, photo_path AS coverUrl
+      `SELECT id, title, author, listing_type AS listingType, price, status,
+              photo_path AS coverUrl, exchange_address AS exchangeAddress
        FROM book_listings
        WHERE owner_id = :ownerId
        ORDER BY created_at DESC`,
@@ -512,7 +784,8 @@ app.get("/api/my/listings", async (req, res) => {
   }
 
   const listings = await query(
-    `SELECT id, title, author, listing_type AS listingType, price, status, photo_path AS coverUrl, created_at AS createdAt
+    `SELECT id, title, author, listing_type AS listingType, price, status,
+            photo_path AS coverUrl, exchange_address AS exchangeAddress, created_at AS createdAt
      FROM book_listings
      WHERE owner_id = :ownerId
      ORDER BY created_at DESC`,
@@ -550,17 +823,42 @@ app.post("/api/listings", (req, res) => {
       return res.status(400).json({ error: "A valid price is required to sell a book." });
     }
 
+    // Enforce per-role book limit.
+    const [roleDetails, extras] = await Promise.all([
+      fetchRoleDetails(session.user.id),
+      fetchProfileExtras(session.user.id),
+    ]);
+    const role = roleDetails.role ?? session.user.role ?? "reader";
+    const limit = listingLimitFor(role);
+    if (extras.listingCount >= limit) {
+      return res.status(403).json({
+        error: `You've reached your limit of ${limit} books for a ${role}. Remove a book before adding a new one.`,
+      });
+    }
+
+    // Exchange books use the user's one saved address.
+    let exchangeAddress = null;
+    if (listingType === "exchange") {
+      if (!extras.address) {
+        return res.status(400).json({
+          error: "Please save your address in My Profile before listing a book for exchange.",
+        });
+      }
+      exchangeAddress = extras.address;
+    }
+
     const coverUrl = req.file ? photoUrlFor(req.file.filename) : null;
 
     const result = await query(
-      `INSERT INTO book_listings (owner_id, title, author, listing_type, price, photo_path, status)
-       VALUES (:ownerId, :title, :author, :listingType, :price, :photoPath, 'available')`,
+      `INSERT INTO book_listings (owner_id, title, author, listing_type, price, exchange_address, photo_path, status)
+       VALUES (:ownerId, :title, :author, :listingType, :price, :exchangeAddress, :photoPath, 'available')`,
       {
         ownerId: session.user.id,
         title,
         author: author || null,
         listingType,
         price,
+        exchangeAddress,
         photoPath: coverUrl,
       },
     );
@@ -572,9 +870,12 @@ app.post("/api/listings", (req, res) => {
         author: author || null,
         listingType,
         price,
+        exchangeAddress,
         status: "available",
         coverUrl,
       },
+      listingCount: extras.listingCount + 1,
+      listingLimit: limit,
     });
   });
 });
@@ -612,6 +913,10 @@ app.get("/", (_req, res) => {
   res.type("text/plain").send("BookHug PC server is running.");
 });
 
-app.listen(serverConfig.port, () => {
-  console.log(`BookHug PC server running on ${serverConfig.publicBaseUrl}`);
-});
+ensureSchemaUpgrades()
+  .catch((error) => console.error("Schema migration failed", error))
+  .finally(() => {
+    app.listen(serverConfig.port, () => {
+      console.log(`BookHug PC server running on ${serverConfig.publicBaseUrl}`);
+    });
+  });

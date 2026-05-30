@@ -5,11 +5,18 @@ export type SessionUser = {
   email: string;
   petName: string;
   avatarUrl?: string;
+  bio?: string | null;
   city?: string | null;
+  address?: string | null;
+  addressVerified?: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
   role?: BookHugRole | null;
   storeName?: string | null;
   libraryName?: string | null;
   libraryStatus?: "pending" | "approved" | "rejected" | null;
+  listingCount?: number;
+  listingLimit?: number;
 };
 
 export type SearchListing = {
@@ -39,7 +46,9 @@ export type PublicProfile = {
   petName: string;
   email?: string;
   avatarUrl?: string;
+  bio?: string | null;
   city?: string | null;
+  address?: string | null;
   role?: BookHugRole | null;
   storeName?: string | null;
   libraryName?: string | null;
@@ -52,6 +61,7 @@ export type PublicProfile = {
     price?: number | null;
     status?: string;
     coverUrl?: string | null;
+    exchangeAddress?: string | null;
   }>;
 };
 
@@ -80,8 +90,18 @@ export type MyListing = {
   price?: number | null;
   status?: string;
   coverUrl?: string | null;
+  exchangeAddress?: string | null;
   createdAt?: string;
 };
+
+export type VerifyLocationResult = {
+  verified: boolean;
+  distanceKm: number | null;
+  geocodedLabel: string | null;
+  thresholdKm?: number;
+  message?: string;
+};
+
 
 const RAW_BACKEND_URL = import.meta.env.VITE_PC_BACKEND_URL?.trim();
 export const BOOKHUG_BACKEND_URL = (RAW_BACKEND_URL || "http://localhost:8788").replace(/\/$/, "");
@@ -162,9 +182,21 @@ export const bookhugApi = {
     return requestJson<{ listings: MyListing[] }>("/api/my/listings");
   },
   async createListing(formData: FormData) {
-    return requestJson<{ listing: MyListing }>("/api/listings", {
+    return requestJson<{ listing: MyListing; listingCount?: number; listingLimit?: number }>("/api/listings", {
       method: "POST",
       body: formData,
+    });
+  },
+  async updateProfile(formData: FormData) {
+    return requestJson<{ user: SessionUser }>("/api/me/profile", {
+      method: "PATCH",
+      body: formData,
+    });
+  },
+  async verifyLocation(payload: { address: string; latitude: number; longitude: number }) {
+    return requestJson<VerifyLocationResult>("/api/me/verify-location", {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
   },
   async deleteListing(id: number | string) {

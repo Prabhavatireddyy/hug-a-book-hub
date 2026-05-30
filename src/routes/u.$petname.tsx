@@ -119,6 +119,9 @@ function PublicProfilePage() {
                     <Library className="size-4" /> {profile.libraryName}
                   </div>
                 ) : null}
+                {profile.bio ? (
+                  <div className="rounded-3xl bg-peach/40 px-4 py-3 text-sm text-foreground">{profile.bio}</div>
+                ) : null}
                 <div className="flex items-center gap-2 rounded-3xl bg-blush/50 px-4 py-3 text-sm text-blush-foreground">
                   <BadgeCheck className="size-4" /> No personal name or private details are shown here.
                 </div>
@@ -151,6 +154,11 @@ function PublicProfilePage() {
                     </div>
                     <h2 className="mt-3 font-display text-2xl font-bold text-foreground">{listing.title}</h2>
                     <p className="text-sm text-muted-foreground">{listing.author || "Author not listed"}</p>
+                    {listing.listingType === "exchange" && listing.exchangeAddress ? (
+                      <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+                        <MapPin className="mt-0.5 size-3.5 shrink-0" /> {listing.exchangeAddress}
+                      </p>
+                    ) : null}
                     <p className="mt-3 font-display text-xl font-semibold text-foreground">
                       {listing.price ? `₹${listing.price}` : "Ask to exchange"}
                     </p>
