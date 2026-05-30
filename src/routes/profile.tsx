@@ -72,7 +72,7 @@ function ProfilePage() {
     void loadListings();
   }, [isAuthenticated]);
 
-  const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     setPhoto(file);
     setPhotoPreview(file ? URL.createObjectURL(file) : null);
@@ -88,7 +88,7 @@ function ProfilePage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!title.trim()) {
       toast.error("Please enter the book name.");
