@@ -5,11 +5,18 @@ export type SessionUser = {
   email: string;
   petName: string;
   avatarUrl?: string;
+  bio?: string | null;
   city?: string | null;
+  address?: string | null;
+  addressVerified?: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
   role?: BookHugRole | null;
   storeName?: string | null;
   libraryName?: string | null;
   libraryStatus?: "pending" | "approved" | "rejected" | null;
+  listingCount?: number;
+  listingLimit?: number;
 };
 
 export type SearchListing = {
