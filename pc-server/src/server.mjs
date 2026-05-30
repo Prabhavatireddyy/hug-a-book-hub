@@ -354,8 +354,10 @@ app.get("/api/auth/google/callback", async (req, res) => {
     const sessionUser = { ...user, ...roleDetails };
     const sessionId = createSession(sessionUser);
 
+    await maybeNudgeAddressVerification(user.id);
+
     res.cookie(serverConfig.sessionCookieName, sessionId, cookieOptions());
-    return res.redirect(new URL(state.redirectTo || "/onboarding", serverConfig.frontendOrigin || "http://localhost:3000").toString());
+    return res.redirect(new URL(state.redirectTo || "/onboarding", serverConfig.frontendOrigin || "http://localhost:5173").toString());
   } catch (error) {
     console.error("Google callback failed", error);
     return res.status(500).send("Google login failed. Check your OAuth callback URL and secrets.");
