@@ -72,6 +72,17 @@ export type OnboardingPayload = {
   libraryName?: string;
 };
 
+export type MyListing = {
+  id: number | string;
+  title: string;
+  author?: string | null;
+  listingType: "sell" | "exchange" | "library";
+  price?: number | null;
+  status?: string;
+  coverUrl?: string | null;
+  createdAt?: string;
+};
+
 const RAW_BACKEND_URL = import.meta.env.VITE_PC_BACKEND_URL?.trim();
 export const BOOKHUG_BACKEND_URL = (RAW_BACKEND_URL || "http://localhost:8788").replace(/\/$/, "");
 
