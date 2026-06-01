@@ -5,11 +5,16 @@ import express from "express";
 import multer from "multer";
 import { mkdirSync } from "node:fs";
 import { extname } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHmac } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import { demoNotifications, demoProfile, demoSearchResponse } from "./lib/demo-data.mjs";
 import { getPool, hasDatabase, pingDatabase, query } from "./lib/db.mjs";
-import { isGoogleConfigured, serverConfig } from "./lib/config.mjs";
+import {
+  isGoogleConfigured,
+  isGoogleMapsConfigured,
+  isRazorpayConfigured,
+  serverConfig,
+} from "./lib/config.mjs";
 import { createSession, deleteSession, getSession, updateSessionUser } from "./lib/session-store.mjs";
 
 mkdirSync(serverConfig.uploadsDir, { recursive: true });
