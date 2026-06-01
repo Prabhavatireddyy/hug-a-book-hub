@@ -429,13 +429,22 @@ async function fetchRoleDetails(userId) {
 
 async function fetchProfileExtras(userId) {
   if (!hasDatabase()) {
-    return { bio: null, address: null, addressVerified: false, listingCount: 0 };
+    return {
+      bio: null,
+      address: null,
+      addressVerified: false,
+      listingCount: 0,
+      mobileNumber: null,
+      whatsappSame: true,
+      whatsappNumber: null,
+    };
   }
 
   const [userRows, countRows] = await Promise.all([
     query(
       `SELECT bio, address, address_verified AS addressVerified, avatar_url AS avatarUrl,
-              latitude, longitude
+              latitude, longitude, mobile_number AS mobileNumber,
+              whatsapp_same AS whatsappSame, whatsapp_number AS whatsappNumber
        FROM users WHERE id = :userId LIMIT 1`,
       { userId },
     ),
@@ -450,6 +459,9 @@ async function fetchProfileExtras(userId) {
     avatarUrl: row.avatarUrl ?? null,
     latitude: row.latitude != null ? Number(row.latitude) : null,
     longitude: row.longitude != null ? Number(row.longitude) : null,
+    mobileNumber: row.mobileNumber ?? null,
+    whatsappSame: row.whatsappSame != null ? Boolean(row.whatsappSame) : true,
+    whatsappNumber: row.whatsappNumber ?? null,
     listingCount: Number(countRows[0]?.listingCount ?? 0),
   };
 }
