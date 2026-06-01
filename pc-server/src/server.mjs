@@ -5,11 +5,16 @@ import express from "express";
 import multer from "multer";
 import { mkdirSync } from "node:fs";
 import { extname } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHmac } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import { demoNotifications, demoProfile, demoSearchResponse } from "./lib/demo-data.mjs";
 import { getPool, hasDatabase, pingDatabase, query } from "./lib/db.mjs";
-import { isGoogleConfigured, serverConfig } from "./lib/config.mjs";
+import {
+  isGoogleConfigured,
+  isGoogleMapsConfigured,
+  isRazorpayConfigured,
+  serverConfig,
+} from "./lib/config.mjs";
 import { createSession, deleteSession, getSession, updateSessionUser } from "./lib/session-store.mjs";
 
 mkdirSync(serverConfig.uploadsDir, { recursive: true });
@@ -72,26 +77,143 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 // device GPS location counts as "verified".
 const ADDRESS_MATCH_KM = 20;
 
-// Geocode a free-text address via OpenStreetMap Nominatim (no API key).
+// Geocode a free-text address via the Google Maps Geocoding API (accurate).
 async function geocodeAddress(address) {
-  const params = new URLSearchParams({ format: "json", limit: "1", q: address });
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-    headers: {
-      "User-Agent": "BookHug/1.0 (self-hosted book exchange app)",
-      "Accept-Language": "en",
-    },
-  });
-  if (!response.ok) {
-    throw new Error("Could not reach the address lookup service.");
+  if (!isGoogleMapsConfigured()) {
+    throw new Error(
+      "Google Maps is not set up yet. Add GOOGLE_MAPS_API_KEY to pc-server/.env and restart the server.",
+    );
   }
-  const results = await response.json();
-  if (!Array.isArray(results) || results.length === 0) {
+  const params = new URLSearchParams({ address, key: serverConfig.googleMaps.apiKey });
+  const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error("Could not reach the Google address lookup service.");
+  }
+  const data = await response.json();
+  if (data.status === "REQUEST_DENIED" || data.status === "INVALID_REQUEST") {
+    throw new Error(
+      data.error_message || "Google rejected the address lookup. Check that your GOOGLE_MAPS_API_KEY is valid.",
+    );
+  }
+  if (data.status !== "OK" || !Array.isArray(data.results) || data.results.length === 0) {
     return null;
   }
+  const top = data.results[0];
   return {
-    latitude: Number(results[0].lat),
-    longitude: Number(results[0].lon),
-    label: String(results[0].display_name ?? ""),
+    latitude: Number(top.geometry?.location?.lat),
+    longitude: Number(top.geometry?.location?.lng),
+    label: String(top.formatted_address ?? ""),
+  };
+}
+
+// --- Live online prices (Amazon etc.) with graceful fallback to search links ---
+const priceCache = new Map(); // title -> { at, data }
+const PRICE_TTL_MS = 1000 * 60 * 60; // 1 hour
+
+function fallbackPrices(title) {
+  const q = encodeURIComponent(title || "books");
+  return [
+    { store: "Amazon", price: null, url: `https://www.amazon.in/s?k=${q}`, image: null },
+    { store: "Flipkart", price: null, url: `https://www.flipkart.com/search?q=${q}`, image: null },
+    { store: "Google Books", price: null, url: `https://www.google.com/search?tbm=bks&q=${q}`, image: null },
+  ];
+}
+
+async function fetchOnlinePrices(title) {
+  const key = (title || "").trim().toLowerCase();
+  if (!key) return fallbackPrices(title);
+
+  const cached = priceCache.get(key);
+  if (cached && Date.now() - cached.at < PRICE_TTL_MS) {
+    return cached.data;
+  }
+
+  if (!serverConfig.rapidApiKey) {
+    return fallbackPrices(title);
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const url = `https://real-time-amazon-data.p.rapidapi.com/search?query=${encodeURIComponent(
+      title,
+    )}&country=IN&category_id=283155`;
+    const response = await fetch(url, {
+      headers: {
+        "X-RapidAPI-Key": serverConfig.rapidApiKey,
+        "X-RapidAPI-Host": "real-time-amazon-data.p.rapidapi.com",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!response.ok) throw new Error(`Price API responded ${response.status}`);
+    const data = await response.json();
+    const products = Array.isArray(data?.data?.products) ? data.data.products : [];
+    const mapped = products.slice(0, 3).map((p) => {
+      const raw = String(p.product_price ?? "").replace(/[^\d.]/g, "");
+      const price = raw ? Math.round(Number(raw)) : null;
+      return {
+        store: "Amazon",
+        price: Number.isFinite(price) ? price : null,
+        url: p.product_url || `https://www.amazon.in/s?k=${encodeURIComponent(title)}`,
+        image: p.product_photo || null,
+      };
+    });
+    const result = mapped.length ? mapped : fallbackPrices(title);
+    priceCache.set(key, { at: Date.now(), data: result });
+    return result;
+  } catch (error) {
+    console.error("Live price lookup failed, using fallback links", error.message);
+    return fallbackPrices(title);
+  }
+}
+
+// Razorpay REST helpers (no SDK needed; uses Basic auth + fetch).
+function razorpayAuthHeader() {
+  const token = Buffer.from(
+    `${serverConfig.razorpay.keyId}:${serverConfig.razorpay.keySecret}`,
+  ).toString("base64");
+  return `Basic ${token}`;
+}
+
+async function createRazorpayOrder({ amountPaise, receipt }) {
+  const response = await fetch("https://api.razorpay.com/v1/orders", {
+    method: "POST",
+    headers: {
+      Authorization: razorpayAuthHeader(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ amount: amountPaise, currency: "INR", receipt, payment_capture: 1 }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.description || "Could not create the Razorpay order.");
+  }
+  return data;
+}
+
+function verifyRazorpaySignature({ orderId, paymentId, signature }) {
+  const expected = createHmac("sha256", serverConfig.razorpay.keySecret)
+    .update(`${orderId}|${paymentId}`)
+    .digest("hex");
+  return expected === signature;
+}
+
+// Returns the public contact details for a user (mobile + whatsapp).
+async function fetchUserContact(userId) {
+  const rows = await query(
+    `SELECT pet_name AS petName, mobile_number AS mobile, whatsapp_same AS whatsappSame,
+            whatsapp_number AS whatsappNumber, email
+     FROM users WHERE id = :userId LIMIT 1`,
+    { userId },
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const whatsapp = Number(row.whatsappSame) === 1 ? row.mobile : row.whatsappNumber;
+  return {
+    petName: row.petName,
+    mobile: row.mobile ?? null,
+    whatsapp: whatsapp ?? null,
   };
 }
 
@@ -118,7 +240,44 @@ async function ensureSchemaUpgrades() {
   await addColumn("users", "bio", "TEXT NULL");
   await addColumn("users", "address", "TEXT NULL");
   await addColumn("users", "address_verified", "TINYINT(1) NOT NULL DEFAULT 0");
+  await addColumn("users", "mobile_number", "VARCHAR(20) NULL");
+  await addColumn("users", "whatsapp_same", "TINYINT(1) NOT NULL DEFAULT 1");
+  await addColumn("users", "whatsapp_number", "VARCHAR(20) NULL");
   await addColumn("book_listings", "exchange_address", "TEXT NULL");
+  await addColumn("notifications", "request_id", "BIGINT UNSIGNED NULL");
+  await addColumn("requests", "contact_unlocked", "TINYINT(1) NOT NULL DEFAULT 0");
+
+  // Create newer tables on existing installs.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      payer_id BIGINT UNSIGNED NOT NULL,
+      request_id BIGINT UNSIGNED NOT NULL,
+      amount_paise INT UNSIGNED NOT NULL,
+      currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+      razorpay_order_id VARCHAR(255) NULL,
+      razorpay_payment_id VARCHAR(255) NULL,
+      status ENUM('created', 'paid', 'failed') NOT NULL DEFAULT 'created',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_payments_payer (payer_id),
+      INDEX idx_payments_order (razorpay_order_id),
+      CONSTRAINT fk_payments_payer FOREIGN KEY (payer_id) REFERENCES users(id) ON DELETE CASCADE,
+      CONSTRAINT fk_payments_request FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE CASCADE
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS complaints (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      reporter_id BIGINT UNSIGNED NOT NULL,
+      target_pet_name VARCHAR(80) NULL,
+      category VARCHAR(80) NOT NULL,
+      description TEXT NOT NULL,
+      status ENUM('open', 'reviewing', 'resolved') NOT NULL DEFAULT 'open',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_complaints_reporter (reporter_id),
+      CONSTRAINT fk_complaints_reporter FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
 }
 
 
@@ -270,13 +429,22 @@ async function fetchRoleDetails(userId) {
 
 async function fetchProfileExtras(userId) {
   if (!hasDatabase()) {
-    return { bio: null, address: null, addressVerified: false, listingCount: 0 };
+    return {
+      bio: null,
+      address: null,
+      addressVerified: false,
+      listingCount: 0,
+      mobileNumber: null,
+      whatsappSame: true,
+      whatsappNumber: null,
+    };
   }
 
   const [userRows, countRows] = await Promise.all([
     query(
       `SELECT bio, address, address_verified AS addressVerified, avatar_url AS avatarUrl,
-              latitude, longitude
+              latitude, longitude, mobile_number AS mobileNumber,
+              whatsapp_same AS whatsappSame, whatsapp_number AS whatsappNumber
        FROM users WHERE id = :userId LIMIT 1`,
       { userId },
     ),
@@ -291,6 +459,9 @@ async function fetchProfileExtras(userId) {
     avatarUrl: row.avatarUrl ?? null,
     latitude: row.latitude != null ? Number(row.latitude) : null,
     longitude: row.longitude != null ? Number(row.longitude) : null,
+    mobileNumber: row.mobileNumber ?? null,
+    whatsappSame: row.whatsappSame != null ? Boolean(row.whatsappSame) : true,
+    whatsappNumber: row.whatsappNumber ?? null,
     listingCount: Number(countRows[0]?.listingCount ?? 0),
   };
 }
@@ -489,13 +660,22 @@ app.patch("/api/me/profile", (req, res) => {
     const addressVerified = String(req.body?.addressVerified) === "true" ? 1 : 0;
     const avatarUrl = req.file ? photoUrlFor(req.file.filename) : null;
 
+    const cleanPhone = (value) =>
+      typeof value === "string" ? value.replace(/[^\d+]/g, "").slice(0, 20) : "";
+    const mobileNumber = cleanPhone(req.body?.mobileNumber) || null;
+    const whatsappSame = String(req.body?.whatsappSame) === "false" ? 0 : 1;
+    const whatsappNumber = whatsappSame ? null : cleanPhone(req.body?.whatsappNumber) || null;
+
     await query(
       `UPDATE users
        SET bio = :bio,
            address = :address,
            latitude = :latitude,
            longitude = :longitude,
-           address_verified = :addressVerified
+           address_verified = :addressVerified,
+           mobile_number = :mobileNumber,
+           whatsapp_same = :whatsappSame,
+           whatsapp_number = :whatsappNumber
            ${avatarUrl ? ", avatar_url = :avatarUrl" : ""}
        WHERE id = :userId`,
       {
@@ -504,6 +684,9 @@ app.patch("/api/me/profile", (req, res) => {
         latitude,
         longitude,
         addressVerified,
+        mobileNumber,
+        whatsappSame,
+        whatsappNumber,
         userId: session.user.id,
         ...(avatarUrl ? { avatarUrl } : {}),
       },
