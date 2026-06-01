@@ -660,13 +660,22 @@ app.patch("/api/me/profile", (req, res) => {
     const addressVerified = String(req.body?.addressVerified) === "true" ? 1 : 0;
     const avatarUrl = req.file ? photoUrlFor(req.file.filename) : null;
 
+    const cleanPhone = (value) =>
+      typeof value === "string" ? value.replace(/[^\d+]/g, "").slice(0, 20) : "";
+    const mobileNumber = cleanPhone(req.body?.mobileNumber) || null;
+    const whatsappSame = String(req.body?.whatsappSame) === "false" ? 0 : 1;
+    const whatsappNumber = whatsappSame ? null : cleanPhone(req.body?.whatsappNumber) || null;
+
     await query(
       `UPDATE users
        SET bio = :bio,
            address = :address,
            latitude = :latitude,
            longitude = :longitude,
-           address_verified = :addressVerified
+           address_verified = :addressVerified,
+           mobile_number = :mobileNumber,
+           whatsapp_same = :whatsappSame,
+           whatsapp_number = :whatsappNumber
            ${avatarUrl ? ", avatar_url = :avatarUrl" : ""}
        WHERE id = :userId`,
       {
@@ -675,6 +684,9 @@ app.patch("/api/me/profile", (req, res) => {
         latitude,
         longitude,
         addressVerified,
+        mobileNumber,
+        whatsappSame,
+        whatsappNumber,
         userId: session.user.id,
         ...(avatarUrl ? { avatarUrl } : {}),
       },
