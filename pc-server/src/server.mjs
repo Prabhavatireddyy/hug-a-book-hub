@@ -77,26 +77,143 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 // device GPS location counts as "verified".
 const ADDRESS_MATCH_KM = 20;
 
-// Geocode a free-text address via OpenStreetMap Nominatim (no API key).
+// Geocode a free-text address via the Google Maps Geocoding API (accurate).
 async function geocodeAddress(address) {
-  const params = new URLSearchParams({ format: "json", limit: "1", q: address });
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-    headers: {
-      "User-Agent": "BookHug/1.0 (self-hosted book exchange app)",
-      "Accept-Language": "en",
-    },
-  });
-  if (!response.ok) {
-    throw new Error("Could not reach the address lookup service.");
+  if (!isGoogleMapsConfigured()) {
+    throw new Error(
+      "Google Maps is not set up yet. Add GOOGLE_MAPS_API_KEY to pc-server/.env and restart the server.",
+    );
   }
-  const results = await response.json();
-  if (!Array.isArray(results) || results.length === 0) {
+  const params = new URLSearchParams({ address, key: serverConfig.googleMaps.apiKey });
+  const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error("Could not reach the Google address lookup service.");
+  }
+  const data = await response.json();
+  if (data.status === "REQUEST_DENIED" || data.status === "INVALID_REQUEST") {
+    throw new Error(
+      data.error_message || "Google rejected the address lookup. Check that your GOOGLE_MAPS_API_KEY is valid.",
+    );
+  }
+  if (data.status !== "OK" || !Array.isArray(data.results) || data.results.length === 0) {
     return null;
   }
+  const top = data.results[0];
   return {
-    latitude: Number(results[0].lat),
-    longitude: Number(results[0].lon),
-    label: String(results[0].display_name ?? ""),
+    latitude: Number(top.geometry?.location?.lat),
+    longitude: Number(top.geometry?.location?.lng),
+    label: String(top.formatted_address ?? ""),
+  };
+}
+
+// --- Live online prices (Amazon etc.) with graceful fallback to search links ---
+const priceCache = new Map(); // title -> { at, data }
+const PRICE_TTL_MS = 1000 * 60 * 60; // 1 hour
+
+function fallbackPrices(title) {
+  const q = encodeURIComponent(title || "books");
+  return [
+    { store: "Amazon", price: null, url: `https://www.amazon.in/s?k=${q}`, image: null },
+    { store: "Flipkart", price: null, url: `https://www.flipkart.com/search?q=${q}`, image: null },
+    { store: "Google Books", price: null, url: `https://www.google.com/search?tbm=bks&q=${q}`, image: null },
+  ];
+}
+
+async function fetchOnlinePrices(title) {
+  const key = (title || "").trim().toLowerCase();
+  if (!key) return fallbackPrices(title);
+
+  const cached = priceCache.get(key);
+  if (cached && Date.now() - cached.at < PRICE_TTL_MS) {
+    return cached.data;
+  }
+
+  if (!serverConfig.rapidApiKey) {
+    return fallbackPrices(title);
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const url = `https://real-time-amazon-data.p.rapidapi.com/search?query=${encodeURIComponent(
+      title,
+    )}&country=IN&category_id=283155`;
+    const response = await fetch(url, {
+      headers: {
+        "X-RapidAPI-Key": serverConfig.rapidApiKey,
+        "X-RapidAPI-Host": "real-time-amazon-data.p.rapidapi.com",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!response.ok) throw new Error(`Price API responded ${response.status}`);
+    const data = await response.json();
+    const products = Array.isArray(data?.data?.products) ? data.data.products : [];
+    const mapped = products.slice(0, 3).map((p) => {
+      const raw = String(p.product_price ?? "").replace(/[^\d.]/g, "");
+      const price = raw ? Math.round(Number(raw)) : null;
+      return {
+        store: "Amazon",
+        price: Number.isFinite(price) ? price : null,
+        url: p.product_url || `https://www.amazon.in/s?k=${encodeURIComponent(title)}`,
+        image: p.product_photo || null,
+      };
+    });
+    const result = mapped.length ? mapped : fallbackPrices(title);
+    priceCache.set(key, { at: Date.now(), data: result });
+    return result;
+  } catch (error) {
+    console.error("Live price lookup failed, using fallback links", error.message);
+    return fallbackPrices(title);
+  }
+}
+
+// Razorpay REST helpers (no SDK needed; uses Basic auth + fetch).
+function razorpayAuthHeader() {
+  const token = Buffer.from(
+    `${serverConfig.razorpay.keyId}:${serverConfig.razorpay.keySecret}`,
+  ).toString("base64");
+  return `Basic ${token}`;
+}
+
+async function createRazorpayOrder({ amountPaise, receipt }) {
+  const response = await fetch("https://api.razorpay.com/v1/orders", {
+    method: "POST",
+    headers: {
+      Authorization: razorpayAuthHeader(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ amount: amountPaise, currency: "INR", receipt, payment_capture: 1 }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.description || "Could not create the Razorpay order.");
+  }
+  return data;
+}
+
+function verifyRazorpaySignature({ orderId, paymentId, signature }) {
+  const expected = createHmac("sha256", serverConfig.razorpay.keySecret)
+    .update(`${orderId}|${paymentId}`)
+    .digest("hex");
+  return expected === signature;
+}
+
+// Returns the public contact details for a user (mobile + whatsapp).
+async function fetchUserContact(userId) {
+  const rows = await query(
+    `SELECT pet_name AS petName, mobile_number AS mobile, whatsapp_same AS whatsappSame,
+            whatsapp_number AS whatsappNumber, email
+     FROM users WHERE id = :userId LIMIT 1`,
+    { userId },
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const whatsapp = Number(row.whatsappSame) === 1 ? row.mobile : row.whatsappNumber;
+  return {
+    petName: row.petName,
+    mobile: row.mobile ?? null,
+    whatsapp: whatsapp ?? null,
   };
 }
 
