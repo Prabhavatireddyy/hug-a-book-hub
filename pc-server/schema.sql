@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   type VARCHAR(100) NOT NULL,
   title VARCHAR(255) NOT NULL,
   body TEXT NOT NULL,
+  request_id BIGINT UNSIGNED NULL,
   is_read BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_notifications_user (user_id),
@@ -77,9 +78,39 @@ CREATE TABLE IF NOT EXISTS requests (
   listing_id BIGINT UNSIGNED NOT NULL,
   request_type ENUM('buy', 'exchange') NOT NULL,
   status ENUM('pending', 'accepted', 'rejected', 'cancelled') NOT NULL DEFAULT 'pending',
+  contact_unlocked TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_requests_to_user (to_user_id),
+  INDEX idx_requests_from_user (from_user_id),
   CONSTRAINT fk_requests_from_user FOREIGN KEY (from_user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_requests_to_user FOREIGN KEY (to_user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_requests_listing FOREIGN KEY (listing_id) REFERENCES book_listings(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  payer_id BIGINT UNSIGNED NOT NULL,
+  request_id BIGINT UNSIGNED NOT NULL,
+  amount_paise INT UNSIGNED NOT NULL,
+  currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+  razorpay_order_id VARCHAR(255) NULL,
+  razorpay_payment_id VARCHAR(255) NULL,
+  status ENUM('created', 'paid', 'failed') NOT NULL DEFAULT 'created',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_payments_payer (payer_id),
+  INDEX idx_payments_order (razorpay_order_id),
+  CONSTRAINT fk_payments_payer FOREIGN KEY (payer_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_payments_request FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS complaints (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  reporter_id BIGINT UNSIGNED NOT NULL,
+  target_pet_name VARCHAR(80) NULL,
+  category VARCHAR(80) NOT NULL,
+  description TEXT NOT NULL,
+  status ENUM('open', 'reviewing', 'resolved') NOT NULL DEFAULT 'open',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_complaints_reporter (reporter_id),
+  CONSTRAINT fk_complaints_reporter FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE
 );
