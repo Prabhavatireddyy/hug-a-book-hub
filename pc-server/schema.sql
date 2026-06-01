@@ -8,6 +8,9 @@ CREATE TABLE IF NOT EXISTS users (
   location_city VARCHAR(120) NULL,
   address TEXT NULL,
   address_verified TINYINT(1) NOT NULL DEFAULT 0,
+  mobile_number VARCHAR(20) NULL,
+  whatsapp_same TINYINT(1) NOT NULL DEFAULT 1,
+  whatsapp_number VARCHAR(20) NULL,
   latitude DECIMAL(10, 7) NULL,
   longitude DECIMAL(10, 7) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
