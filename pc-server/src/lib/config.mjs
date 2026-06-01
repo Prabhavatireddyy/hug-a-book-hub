@@ -25,6 +25,19 @@ export const serverConfig = {
     password: process.env.MYSQL_PASSWORD ?? "",
     database: process.env.MYSQL_DATABASE?.trim() || "",
   },
+  // Google Maps Geocoding (server-side address verification only).
+  googleMaps: {
+    apiKey: process.env.GOOGLE_MAPS_API_KEY?.trim() || "",
+  },
+  // Razorpay for the ₹5 "unlock contact" connection fee.
+  razorpay: {
+    keyId: process.env.RAZORPAY_KEY_ID?.trim() || "",
+    keySecret: process.env.RAZORPAY_KEY_SECRET?.trim() || "",
+  },
+  // RapidAPI key for live Amazon/online book prices (optional; falls back to search links).
+  rapidApiKey: process.env.RAPIDAPI_KEY?.trim() || "",
+  // Amount charged to unlock a contact, in paise (₹5 = 500 paise).
+  connectionFeePaise: Number(process.env.CONNECTION_FEE_PAISE ?? 500),
 };
 
 export function isGoogleConfigured() {
@@ -33,6 +46,14 @@ export function isGoogleConfigured() {
       serverConfig.google.clientSecret &&
       serverConfig.google.callbackUrl,
   );
+}
+
+export function isGoogleMapsConfigured() {
+  return Boolean(serverConfig.googleMaps.apiKey);
+}
+
+export function isRazorpayConfigured() {
+  return Boolean(serverConfig.razorpay.keyId && serverConfig.razorpay.keySecret);
 }
 
 export function isMysqlConfigured() {
