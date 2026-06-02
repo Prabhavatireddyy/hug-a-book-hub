@@ -945,9 +945,11 @@ app.post("/api/requests/:type", async (req, res) => {
   }
 
   const listingRows = await query(
-    `SELECT b.id, b.owner_id AS ownerId, u.pet_name AS toPetName
+    `SELECT b.id, b.owner_id AS ownerId, b.title, u.pet_name AS toPetName,
+            COALESCE(r.role, 'reader') AS ownerRole
      FROM book_listings b
      INNER JOIN users u ON u.id = b.owner_id
+     LEFT JOIN user_roles r ON r.user_id = u.id
      WHERE b.id = :listingId
      LIMIT 1`,
     { listingId },
@@ -958,29 +960,59 @@ app.post("/api/requests/:type", async (req, res) => {
   }
 
   const listing = listingRows[0];
+
+  if (Number(listing.ownerId) === Number(session.user.id)) {
+    return res.status(400).json({ error: "You cannot request your own book." });
+  }
+
+  // Sellers and libraries don't need to approve — the connection is auto-accepted
+  // and the requester can pay ₹5 right away to unlock contact.
+  const autoAccept = listing.ownerRole === "seller" || listing.ownerRole === "library";
+  const status = autoAccept ? "accepted" : "pending";
+
   const result = await query(
     `INSERT INTO requests (from_user_id, to_user_id, listing_id, request_type, status)
-     VALUES (:fromUserId, :toUserId, :listingId, :requestType, 'pending')`,
+     VALUES (:fromUserId, :toUserId, :listingId, :requestType, :status)`,
     {
       fromUserId: session.user.id,
       toUserId: listing.ownerId,
       listingId: listing.id,
       requestType: type,
+      status,
     },
   );
+  const requestId = result.insertId;
 
+  // Notify the owner that someone is interested.
   await query(
-    `INSERT INTO notifications (user_id, type, title, body, is_read)
-     VALUES (:userId, :type, :title, :body, false)`,
+    `INSERT INTO notifications (user_id, type, title, body, is_read, request_id)
+     VALUES (:userId, :type, :title, :body, false, :requestId)`,
     {
       userId: listing.ownerId,
       type: `${type}_request_received`,
       title: type === "buy" ? "New buy request" : "New exchange request",
-      body: `${session.user.petName} sent you a ${type} request.`,
+      body: autoAccept
+        ? `${session.user.petName} wants "${listing.title}". They can pay ₹5 to get your contact.`
+        : `${session.user.petName} sent a ${type} request for "${listing.title}". Accept to let them connect.`,
+      requestId,
     },
   );
 
-  return res.json({ ok: true, requestId: result.insertId, toPetName: listing.toPetName });
+  // If auto-accepted, immediately tell the requester they can pay to connect.
+  if (autoAccept) {
+    await query(
+      `INSERT INTO notifications (user_id, type, title, body, is_read, request_id)
+       VALUES (:userId, 'request_accepted', :title, :body, false, :requestId)`,
+      {
+        userId: session.user.id,
+        title: "Ready to connect",
+        body: `Pay ₹5 to unlock ${listing.toPetName}'s contact for "${listing.title}".`,
+        requestId,
+      },
+    );
+  }
+
+  return res.json({ ok: true, requestId, toPetName: listing.toPetName, autoAccept });
 });
 
 app.get("/api/my/listings", async (req, res) => {
