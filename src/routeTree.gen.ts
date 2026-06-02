@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UPetnameRouteImport } from './routes/u.$petname'
+import { Route as ConnectRequestIdRouteImport } from './routes/connect.$requestId'
 
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
@@ -46,6 +47,11 @@ const UPetnameRoute = UPetnameRouteImport.update({
   path: '/u/$petname',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConnectRequestIdRoute = ConnectRequestIdRouteImport.update({
+  id: '/connect/$requestId',
+  path: '/connect/$requestId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -53,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/profile': typeof ProfileRoute
+  '/connect/$requestId': typeof ConnectRequestIdRoute
   '/u/$petname': typeof UPetnameRoute
 }
 export interface FileRoutesByTo {
@@ -61,6 +68,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/profile': typeof ProfileRoute
+  '/connect/$requestId': typeof ConnectRequestIdRoute
   '/u/$petname': typeof UPetnameRoute
 }
 export interface FileRoutesById {
@@ -70,6 +78,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/profile': typeof ProfileRoute
+  '/connect/$requestId': typeof ConnectRequestIdRoute
   '/u/$petname': typeof UPetnameRoute
 }
 export interface FileRouteTypes {
@@ -80,9 +89,17 @@ export interface FileRouteTypes {
     | '/login'
     | '/onboarding'
     | '/profile'
+    | '/connect/$requestId'
     | '/u/$petname'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/home' | '/login' | '/onboarding' | '/profile' | '/u/$petname'
+  to:
+    | '/'
+    | '/home'
+    | '/login'
+    | '/onboarding'
+    | '/profile'
+    | '/connect/$requestId'
+    | '/u/$petname'
   id:
     | '__root__'
     | '/'
@@ -90,6 +107,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/onboarding'
     | '/profile'
+    | '/connect/$requestId'
     | '/u/$petname'
   fileRoutesById: FileRoutesById
 }
@@ -99,6 +117,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
   ProfileRoute: typeof ProfileRoute
+  ConnectRequestIdRoute: typeof ConnectRequestIdRoute
   UPetnameRoute: typeof UPetnameRoute
 }
 
@@ -146,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UPetnameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/connect/$requestId': {
+      id: '/connect/$requestId'
+      path: '/connect/$requestId'
+      fullPath: '/connect/$requestId'
+      preLoaderRoute: typeof ConnectRequestIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -155,6 +181,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
   ProfileRoute: ProfileRoute,
+  ConnectRequestIdRoute: ConnectRequestIdRoute,
   UPetnameRoute: UPetnameRoute,
 }
 export const routeTree = rootRouteImport

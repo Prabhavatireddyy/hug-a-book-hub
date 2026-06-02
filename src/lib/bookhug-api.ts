@@ -17,6 +17,9 @@ export type SessionUser = {
   libraryStatus?: "pending" | "approved" | "rejected" | null;
   listingCount?: number;
   listingLimit?: number;
+  mobileNumber?: string | null;
+  whatsappSame?: boolean;
+  whatsappNumber?: string | null;
 };
 
 export type SearchListing = {
@@ -38,7 +41,14 @@ export type SearchResponse = {
   nearby: SearchListing[];
   sellers: SearchListing[];
   libraries: SearchListing[];
-  onlinePrices: Array<{ store: string; price: number; url: string }>;
+  onlinePrices: OnlinePrice[];
+};
+
+export type OnlinePrice = {
+  store: string;
+  price: number | null;
+  url: string;
+  image?: string | null;
 };
 
 export type PublicProfile = {
@@ -72,6 +82,49 @@ export type AppNotification = {
   body: string;
   isRead: boolean;
   createdAt: string;
+  requestId?: number | string | null;
+  requestStatus?: "pending" | "accepted" | "rejected" | null;
+  contactUnlocked?: boolean;
+  requestType?: "buy" | "exchange" | null;
+  otherRole?: BookHugRole | null;
+};
+
+export type ContactInfo = {
+  petName: string;
+  mobile: string | null;
+  whatsapp: string | null;
+};
+
+export type RequestDetail = {
+  id: number | string;
+  requestType: "buy" | "exchange";
+  status: "pending" | "accepted" | "rejected";
+  contactUnlocked: boolean;
+  bookTitle: string;
+  coverUrl?: string | null;
+  ownerPetName: string;
+  ownerRole: BookHugRole;
+  amountPaise: number;
+  razorpayConfigured: boolean;
+  contact?: ContactInfo | null;
+};
+
+export type PaymentOrder = {
+  orderId: string;
+  amountPaise: number;
+  currency: string;
+  keyId: string;
+};
+
+export type PaymentHistoryItem = {
+  id: number | string;
+  amountPaise: number;
+  status: "created" | "paid" | "failed";
+  createdAt: string;
+  requestId: number | string;
+  bookTitle: string;
+  ownerPetName: string;
+  contact: ContactInfo | null;
 };
 
 export type OnboardingPayload = {
@@ -202,6 +255,43 @@ export const bookhugApi = {
   async deleteListing(id: number | string) {
     return requestJson<{ ok: boolean }>(`/api/listings/${id}`, {
       method: "DELETE",
+    });
+  },
+  async markAllNotificationsRead() {
+    return requestJson<{ ok: boolean }>("/api/notifications/read-all", { method: "POST" });
+  },
+  async respondToRequest(id: number | string, action: "accept" | "reject") {
+    return requestJson<{ ok: boolean; status: string }>(`/api/requests/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ action }),
+    });
+  },
+  async getRequest(id: number | string) {
+    return requestJson<RequestDetail>(`/api/requests/${id}`);
+  },
+  async createPaymentOrder(requestId: number | string) {
+    return requestJson<PaymentOrder>("/api/payments/order", {
+      method: "POST",
+      body: JSON.stringify({ requestId }),
+    });
+  },
+  async verifyPayment(payload: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) {
+    return requestJson<{ ok: boolean; contact: ContactInfo | null }>("/api/payments/verify", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async getPaymentHistory() {
+    return requestJson<{ payments: PaymentHistoryItem[] }>("/api/payments/history");
+  },
+  async submitComplaint(payload: { targetPetName?: string; category: string; description: string }) {
+    return requestJson<{ ok: boolean }>("/api/complaints", {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
   },
 };
