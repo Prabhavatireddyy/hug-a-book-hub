@@ -831,13 +831,15 @@ app.get("/api/search", async (req, res) => {
     coverUrl: row.coverUrl || "https://covers.openlibrary.org/b/isbn/0547928227-L.jpg",
   }));
 
+  const onlinePrices = await fetchOnlinePrices(q || "books");
+
   return res.json({
     query: q,
     mode,
     nearby: mapped.filter((row) => row.ownerRole === "reader"),
     sellers: mapped.filter((row) => row.ownerRole === "seller"),
     libraries: mapped.filter((row) => row.ownerRole === "library"),
-    onlinePrices: demoSearchResponse.onlinePrices,
+    onlinePrices,
   });
 });
 
