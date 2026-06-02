@@ -257,4 +257,41 @@ export const bookhugApi = {
       method: "DELETE",
     });
   },
+  async markAllNotificationsRead() {
+    return requestJson<{ ok: boolean }>("/api/notifications/read-all", { method: "POST" });
+  },
+  async respondToRequest(id: number | string, action: "accept" | "reject") {
+    return requestJson<{ ok: boolean; status: string }>(`/api/requests/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ action }),
+    });
+  },
+  async getRequest(id: number | string) {
+    return requestJson<RequestDetail>(`/api/requests/${id}`);
+  },
+  async createPaymentOrder(requestId: number | string) {
+    return requestJson<PaymentOrder>("/api/payments/order", {
+      method: "POST",
+      body: JSON.stringify({ requestId }),
+    });
+  },
+  async verifyPayment(payload: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) {
+    return requestJson<{ ok: boolean; contact: ContactInfo | null }>("/api/payments/verify", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async getPaymentHistory() {
+    return requestJson<{ payments: PaymentHistoryItem[] }>("/api/payments/history");
+  },
+  async submitComplaint(payload: { targetPetName?: string; category: string; description: string }) {
+    return requestJson<{ ok: boolean }>("/api/complaints", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
 };
