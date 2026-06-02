@@ -41,7 +41,14 @@ export type SearchResponse = {
   nearby: SearchListing[];
   sellers: SearchListing[];
   libraries: SearchListing[];
-  onlinePrices: Array<{ store: string; price: number; url: string }>;
+  onlinePrices: OnlinePrice[];
+};
+
+export type OnlinePrice = {
+  store: string;
+  price: number | null;
+  url: string;
+  image?: string | null;
 };
 
 export type PublicProfile = {
