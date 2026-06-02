@@ -890,15 +890,40 @@ app.get("/api/notifications", async (req, res) => {
   }
 
   const notifications = await query(
-    `SELECT id, type, title, body, is_read AS isRead, created_at AS createdAt
-     FROM notifications
-     WHERE user_id = :userId
-     ORDER BY created_at DESC
-     LIMIT 20`,
+    `SELECT n.id, n.type, n.title, n.body, n.is_read AS isRead, n.created_at AS createdAt,
+            n.request_id AS requestId, r.status AS requestStatus,
+            r.contact_unlocked AS contactUnlocked, r.request_type AS requestType,
+            COALESCE(ro.role, 'reader') AS otherRole
+     FROM notifications n
+     LEFT JOIN requests r ON r.id = n.request_id
+     LEFT JOIN user_roles ro ON ro.user_id = r.to_user_id
+     WHERE n.user_id = :userId
+     ORDER BY n.created_at DESC
+     LIMIT 30`,
     { userId: session.user.id },
   );
 
-  return res.json({ notifications });
+  return res.json({
+    notifications: notifications.map((n) => ({
+      ...n,
+      isRead: Boolean(n.isRead),
+      contactUnlocked: Boolean(n.contactUnlocked),
+    })),
+  });
+});
+
+app.post("/api/notifications/read-all", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+  if (!hasDatabase()) {
+    return res.json({ ok: true });
+  }
+  await query(`UPDATE notifications SET is_read = true WHERE user_id = :userId`, {
+    userId: session.user.id,
+  });
+  return res.json({ ok: true });
 });
 
 app.post("/api/requests/:type", async (req, res) => {
