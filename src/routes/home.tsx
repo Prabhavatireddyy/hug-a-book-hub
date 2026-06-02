@@ -297,7 +297,7 @@ function HomePage() {
             <Card className="sticky top-6 rounded-[2rem] border-border/70 shadow-cute">
               <CardHeader>
                 <CardTitle className="font-display text-2xl">Online prices</CardTitle>
-                <CardDescription>Quick fallback while your nearby results load.</CardDescription>
+                <CardDescription>Live comparison for "{searchData?.query || query}" so you know a fair price.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {(searchData?.onlinePrices ?? []).map((price) => (
@@ -310,10 +310,14 @@ function HomePage() {
                   >
                     <div>
                       <p className="font-display text-lg font-semibold text-foreground">{price.store}</p>
-                      <p className="text-sm text-muted-foreground">Best placeholder comparison price</p>
+                      <p className="text-sm text-muted-foreground">
+                        {price.price != null ? "Live price found" : "Tap to see prices"}
+                      </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-display text-xl font-bold text-foreground">₹{price.price}</p>
+                      <p className="font-display text-xl font-bold text-foreground">
+                        {price.price != null ? `₹${price.price}` : "Search"}
+                      </p>
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary">
                         Visit <ExternalLink className="size-3.5" />
                       </span>
@@ -322,9 +326,9 @@ function HomePage() {
                 ))}
 
                 <div className="rounded-3xl bg-blush/50 p-4">
-                  <p className="font-display text-lg font-semibold text-foreground">Need exact marketplace sync later?</p>
+                  <p className="font-display text-lg font-semibold text-foreground">Why compare?</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    These are safe placeholders for now, ready to swap with real Amazon and Flipkart integrations later.
+                    Checking the online price helps you offer a fair deal to nearby readers and sellers.
                   </p>
                 </div>
               </CardContent>
