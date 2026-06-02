@@ -1150,6 +1150,298 @@ app.delete("/api/listings/:id", async (req, res) => {
 });
 
 
+// --- Request details (used by the connect/pay page) ---
+app.get("/api/requests/:id", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+  if (!hasDatabase()) {
+    return res.status(503).json({ error: "Database is not connected on the PC server yet." });
+  }
+
+  const requestId = Number(req.params.id ?? 0);
+  const rows = await query(
+    `SELECT r.id, r.from_user_id AS fromUserId, r.to_user_id AS toUserId,
+            r.request_type AS requestType, r.status, r.contact_unlocked AS contactUnlocked,
+            b.title AS bookTitle, b.photo_path AS coverUrl,
+            u.pet_name AS ownerPetName, COALESCE(ro.role, 'reader') AS ownerRole
+     FROM requests r
+     INNER JOIN book_listings b ON b.id = r.listing_id
+     INNER JOIN users u ON u.id = r.to_user_id
+     LEFT JOIN user_roles ro ON ro.user_id = r.to_user_id
+     WHERE r.id = :requestId
+     LIMIT 1`,
+    { requestId },
+  );
+
+  const request = rows[0];
+  if (!request) {
+    return res.status(404).json({ error: "Request not found." });
+  }
+  if (Number(request.fromUserId) !== Number(session.user.id)) {
+    return res.status(403).json({ error: "This request isn't yours." });
+  }
+
+  const contactUnlocked = Boolean(request.contactUnlocked);
+  const payload = {
+    id: request.id,
+    requestType: request.requestType,
+    status: request.status,
+    contactUnlocked,
+    bookTitle: request.bookTitle,
+    coverUrl: request.coverUrl,
+    ownerPetName: request.ownerPetName,
+    ownerRole: request.ownerRole,
+    amountPaise: serverConfig.connectionFeePaise,
+    razorpayConfigured: isRazorpayConfigured(),
+  };
+
+  // If already paid, include the revealed contact again so it's never lost.
+  if (contactUnlocked) {
+    payload.contact = await fetchUserContact(request.toUserId);
+  }
+
+  return res.json(payload);
+});
+
+// --- Accept / reject an incoming request (User B acts) ---
+app.patch("/api/requests/:id", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+  if (!hasDatabase()) {
+    return res.status(503).json({ error: "Database is not connected on the PC server yet." });
+  }
+
+  const requestId = Number(req.params.id ?? 0);
+  const action = req.body?.action === "reject" ? "reject" : "accept";
+
+  const rows = await query(
+    `SELECT r.id, r.from_user_id AS fromUserId, r.to_user_id AS toUserId, r.status,
+            b.title AS bookTitle
+     FROM requests r
+     INNER JOIN book_listings b ON b.id = r.listing_id
+     WHERE r.id = :requestId LIMIT 1`,
+    { requestId },
+  );
+  const request = rows[0];
+  if (!request) {
+    return res.status(404).json({ error: "Request not found." });
+  }
+  if (Number(request.toUserId) !== Number(session.user.id)) {
+    return res.status(403).json({ error: "Only the receiver can respond to this request." });
+  }
+
+  const newStatus = action === "accept" ? "accepted" : "rejected";
+  await query(`UPDATE requests SET status = :status WHERE id = :requestId`, {
+    status: newStatus,
+    requestId,
+  });
+
+  // Tell the requester what happened.
+  await query(
+    `INSERT INTO notifications (user_id, type, title, body, is_read, request_id)
+     VALUES (:userId, :type, :title, :body, false, :requestId)`,
+    {
+      userId: request.fromUserId,
+      type: action === "accept" ? "request_accepted" : "request_rejected",
+      title: action === "accept" ? "Request accepted 🎉" : "Request declined",
+      body:
+        action === "accept"
+          ? `${session.user.petName} accepted your request for "${request.bookTitle}". Pay ₹5 to unlock their contact.`
+          : `${session.user.petName} declined your request for "${request.bookTitle}".`,
+      requestId,
+    },
+  );
+
+  return res.json({ ok: true, status: newStatus });
+});
+
+// --- Create a Razorpay order for the ₹5 connection fee ---
+app.post("/api/payments/order", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+  if (!hasDatabase()) {
+    return res.status(503).json({ error: "Database is not connected on the PC server yet." });
+  }
+  if (!isRazorpayConfigured()) {
+    return res.status(503).json({
+      error: "Payments are not set up yet. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to pc-server/.env and restart.",
+    });
+  }
+
+  const requestId = Number(req.body?.requestId ?? 0);
+  const rows = await query(
+    `SELECT r.id, r.from_user_id AS fromUserId, r.to_user_id AS toUserId, r.status,
+            r.contact_unlocked AS contactUnlocked, COALESCE(ro.role, 'reader') AS ownerRole
+     FROM requests r
+     LEFT JOIN user_roles ro ON ro.user_id = r.to_user_id
+     WHERE r.id = :requestId LIMIT 1`,
+    { requestId },
+  );
+  const request = rows[0];
+  if (!request) {
+    return res.status(404).json({ error: "Request not found." });
+  }
+  if (Number(request.fromUserId) !== Number(session.user.id)) {
+    return res.status(403).json({ error: "This request isn't yours." });
+  }
+  if (Boolean(request.contactUnlocked)) {
+    return res.status(400).json({ error: "You've already unlocked this contact." });
+  }
+  const payable =
+    request.ownerRole === "seller" || request.ownerRole === "library" || request.status === "accepted";
+  if (!payable) {
+    return res.status(400).json({ error: "Wait for the owner to accept before paying." });
+  }
+
+  const amountPaise = serverConfig.connectionFeePaise;
+  let order;
+  try {
+    order = await createRazorpayOrder({ amountPaise, receipt: `req_${requestId}_${Date.now()}` });
+  } catch (error) {
+    return res.status(502).json({ error: error instanceof Error ? error.message : "Could not start payment." });
+  }
+
+  await query(
+    `INSERT INTO payments (payer_id, request_id, amount_paise, currency, razorpay_order_id, status)
+     VALUES (:payerId, :requestId, :amountPaise, 'INR', :orderId, 'created')`,
+    { payerId: session.user.id, requestId, amountPaise, orderId: order.id },
+  );
+
+  return res.json({
+    orderId: order.id,
+    amountPaise,
+    currency: "INR",
+    keyId: serverConfig.razorpay.keyId,
+  });
+});
+
+// --- Verify the Razorpay payment and unlock the contact ---
+app.post("/api/payments/verify", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+  if (!hasDatabase()) {
+    return res.status(503).json({ error: "Database is not connected on the PC server yet." });
+  }
+
+  const orderId = String(req.body?.razorpay_order_id ?? "");
+  const paymentId = String(req.body?.razorpay_payment_id ?? "");
+  const signature = String(req.body?.razorpay_signature ?? "");
+
+  if (!orderId || !paymentId || !signature) {
+    return res.status(400).json({ error: "Missing payment details." });
+  }
+  if (!verifyRazorpaySignature({ orderId, paymentId, signature })) {
+    return res.status(400).json({ error: "Payment could not be verified. Please contact support." });
+  }
+
+  const payments = await query(
+    `SELECT id, request_id AS requestId, payer_id AS payerId FROM payments
+     WHERE razorpay_order_id = :orderId AND payer_id = :payerId LIMIT 1`,
+    { orderId, payerId: session.user.id },
+  );
+  const payment = payments[0];
+  if (!payment) {
+    return res.status(404).json({ error: "Payment record not found." });
+  }
+
+  await query(
+    `UPDATE payments SET status = 'paid', razorpay_payment_id = :paymentId WHERE id = :id`,
+    { paymentId, id: payment.id },
+  );
+  await query(`UPDATE requests SET contact_unlocked = 1 WHERE id = :requestId`, {
+    requestId: payment.requestId,
+  });
+
+  const reqRows = await query(`SELECT to_user_id AS toUserId FROM requests WHERE id = :id LIMIT 1`, {
+    id: payment.requestId,
+  });
+  const contact = reqRows[0] ? await fetchUserContact(reqRows[0].toUserId) : null;
+
+  return res.json({ ok: true, contact });
+});
+
+// --- Payment history for the signed-in user ---
+app.get("/api/payments/history", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+  if (!hasDatabase()) {
+    return res.json({ payments: [] });
+  }
+
+  const rows = await query(
+    `SELECT p.id, p.amount_paise AS amountPaise, p.status, p.created_at AS createdAt,
+            p.request_id AS requestId, r.contact_unlocked AS contactUnlocked,
+            r.to_user_id AS toUserId, b.title AS bookTitle, u.pet_name AS ownerPetName,
+            u.mobile_number AS mobile, u.whatsapp_same AS whatsappSame, u.whatsapp_number AS whatsappNumber
+     FROM payments p
+     INNER JOIN requests r ON r.id = p.request_id
+     INNER JOIN book_listings b ON b.id = r.listing_id
+     INNER JOIN users u ON u.id = r.to_user_id
+     WHERE p.payer_id = :payerId
+     ORDER BY p.created_at DESC
+     LIMIT 50`,
+    { payerId: session.user.id },
+  );
+
+  const payments = rows.map((row) => {
+    const unlocked = Boolean(row.contactUnlocked) && row.status === "paid";
+    const whatsapp = Number(row.whatsappSame) === 1 ? row.mobile : row.whatsappNumber;
+    return {
+      id: row.id,
+      amountPaise: row.amountPaise,
+      status: row.status,
+      createdAt: row.createdAt,
+      requestId: row.requestId,
+      bookTitle: row.bookTitle,
+      ownerPetName: row.ownerPetName,
+      contact: unlocked ? { petName: row.ownerPetName, mobile: row.mobile ?? null, whatsapp: whatsapp ?? null } : null,
+    };
+  });
+
+  return res.json({ payments });
+});
+
+// --- Report fraud / abuse ---
+app.post("/api/complaints", async (req, res) => {
+  const session = getAuthedUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Sign in first" });
+  }
+  if (!hasDatabase()) {
+    return res.json({ ok: true });
+  }
+
+  const targetPetName =
+    typeof req.body?.targetPetName === "string" ? req.body.targetPetName.trim().slice(0, 80) || null : null;
+  const category = typeof req.body?.category === "string" ? req.body.category.trim().slice(0, 80) : "";
+  const description = typeof req.body?.description === "string" ? req.body.description.trim().slice(0, 2000) : "";
+
+  if (!category) {
+    return res.status(400).json({ error: "Please choose what went wrong." });
+  }
+  if (description.length < 10) {
+    return res.status(400).json({ error: "Please describe what happened (at least 10 characters)." });
+  }
+
+  await query(
+    `INSERT INTO complaints (reporter_id, target_pet_name, category, description, status)
+     VALUES (:reporterId, :targetPetName, :category, :description, 'open')`,
+    { reporterId: session.user.id, targetPetName, category, description },
+  );
+
+  return res.json({ ok: true });
+});
+
 
 app.get("/", (_req, res) => {
   res.type("text/plain").send("BookHug PC server is running.");
