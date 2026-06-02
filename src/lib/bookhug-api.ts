@@ -17,6 +17,9 @@ export type SessionUser = {
   libraryStatus?: "pending" | "approved" | "rejected" | null;
   listingCount?: number;
   listingLimit?: number;
+  mobileNumber?: string | null;
+  whatsappSame?: boolean;
+  whatsappNumber?: string | null;
 };
 
 export type SearchListing = {
