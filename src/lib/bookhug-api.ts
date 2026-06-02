@@ -82,6 +82,49 @@ export type AppNotification = {
   body: string;
   isRead: boolean;
   createdAt: string;
+  requestId?: number | string | null;
+  requestStatus?: "pending" | "accepted" | "rejected" | null;
+  contactUnlocked?: boolean;
+  requestType?: "buy" | "exchange" | null;
+  otherRole?: BookHugRole | null;
+};
+
+export type ContactInfo = {
+  petName: string;
+  mobile: string | null;
+  whatsapp: string | null;
+};
+
+export type RequestDetail = {
+  id: number | string;
+  requestType: "buy" | "exchange";
+  status: "pending" | "accepted" | "rejected";
+  contactUnlocked: boolean;
+  bookTitle: string;
+  coverUrl?: string | null;
+  ownerPetName: string;
+  ownerRole: BookHugRole;
+  amountPaise: number;
+  razorpayConfigured: boolean;
+  contact?: ContactInfo | null;
+};
+
+export type PaymentOrder = {
+  orderId: string;
+  amountPaise: number;
+  currency: string;
+  keyId: string;
+};
+
+export type PaymentHistoryItem = {
+  id: number | string;
+  amountPaise: number;
+  status: "created" | "paid" | "failed";
+  createdAt: string;
+  requestId: number | string;
+  bookTitle: string;
+  ownerPetName: string;
+  contact: ContactInfo | null;
 };
 
 export type OnboardingPayload = {
