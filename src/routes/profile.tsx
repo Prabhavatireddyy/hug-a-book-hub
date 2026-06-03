@@ -755,11 +755,18 @@ function ProfilePage() {
                   </div>
                 )}
 
+                {!hasMobile ? (
+                  <div className="flex items-start gap-3 rounded-3xl bg-butter/60 p-4 text-sm text-butter-foreground">
+                    <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                    <span>Add your mobile number in the Contact section above to start listing books.</span>
+                  </div>
+                ) : null}
+
                 <Button
                   type="submit"
                   size="lg"
                   className="h-12 w-full rounded-full font-display text-base"
-                  disabled={submitting || limitReached}
+                  disabled={submitting || limitReached || !hasMobile}
                 >
                   {submitting ? (
                     <>
@@ -767,6 +774,8 @@ function ProfilePage() {
                     </>
                   ) : limitReached ? (
                     "Limit reached"
+                  ) : !hasMobile ? (
+                    "Add mobile number first"
                   ) : (
                     "Add book"
                   )}
