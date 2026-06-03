@@ -10,6 +10,8 @@ import {
   LoaderCircle,
   LocateFixed,
   MapPin,
+  MessageCircle,
+  Phone,
   ShoppingBag,
   Trash2,
 } from "lucide-react";
@@ -18,6 +20,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { bookhugApi, type MyListing, type VerifyLocationResult } from "@/lib/bookhug-api";
