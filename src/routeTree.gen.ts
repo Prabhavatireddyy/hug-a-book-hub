@@ -13,6 +13,7 @@ import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HomeRouteImport } from './routes/home'
+import { Route as HelpRouteImport } from './routes/help'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UPetnameRouteImport } from './routes/u.$petname'
 import { Route as ConnectRequestIdRouteImport } from './routes/connect.$requestId'
@@ -37,6 +38,11 @@ const HomeRoute = HomeRouteImport.update({
   path: '/home',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HelpRoute = HelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -55,6 +61,7 @@ const ConnectRequestIdRoute = ConnectRequestIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/help': typeof HelpRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
@@ -64,6 +71,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/help': typeof HelpRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
@@ -74,6 +82,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/help': typeof HelpRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
@@ -85,6 +94,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/help'
     | '/home'
     | '/login'
     | '/onboarding'
@@ -94,6 +104,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/help'
     | '/home'
     | '/login'
     | '/onboarding'
@@ -103,6 +114,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/help'
     | '/home'
     | '/login'
     | '/onboarding'
@@ -113,6 +125,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  HelpRoute: typeof HelpRoute
   HomeRoute: typeof HomeRoute
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
@@ -151,6 +164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HomeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/help': {
+      id: '/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof HelpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -177,6 +197,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  HelpRoute: HelpRoute,
   HomeRoute: HomeRoute,
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
@@ -187,3 +208,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
