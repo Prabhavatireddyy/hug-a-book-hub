@@ -1,5 +1,6 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { NotificationCenter } from "@/components/notification-center";
+import { SiteFooter } from "@/components/site-footer";
 import { Toaster } from "@/components/ui/sonner";
 import { BookHugAuthProvider } from "@/lib/bookhug-auth";
 
@@ -72,7 +73,12 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   return (
     <BookHugAuthProvider>
-      <Outlet />
+      <div className="flex min-h-screen flex-col">
+        <div className="flex-1">
+          <Outlet />
+        </div>
+        <SiteFooter />
+      </div>
       <NotificationCenter />
       <Toaster richColors position="top-right" />
     </BookHugAuthProvider>

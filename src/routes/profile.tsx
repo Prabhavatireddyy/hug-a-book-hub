@@ -10,6 +10,8 @@ import {
   LoaderCircle,
   LocateFixed,
   MapPin,
+  MessageCircle,
+  Phone,
   ShoppingBag,
   Trash2,
 } from "lucide-react";
@@ -18,6 +20,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { bookhugApi, type MyListing, type VerifyLocationResult } from "@/lib/bookhug-api";
@@ -75,6 +78,12 @@ function ProfilePage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
 
+  // Contact details (mobile compulsory + optional separate WhatsApp)
+  const [mobileNumber, setMobileNumber] = useState("");
+  const [whatsappSame, setWhatsappSame] = useState(true);
+  const [whatsappNumber, setWhatsappNumber] = useState("");
+  const [savingContact, setSavingContact] = useState(false);
+
   // Address & verification
   const [address, setAddress] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -105,6 +114,9 @@ function ProfilePage() {
     if (user) {
       setBio(user.bio ?? "");
       setAddress(user.address ?? "");
+      setMobileNumber(user.mobileNumber ?? "");
+      setWhatsappSame(user.whatsappSame ?? true);
+      setWhatsappNumber(user.whatsappNumber ?? "");
       if (user.latitude != null && user.longitude != null) {
         setCoords({ lat: Number(user.latitude), lng: Number(user.longitude) });
       }
@@ -133,6 +145,7 @@ function ProfilePage() {
   const limitReached = usedCount >= limit;
   const addressVerified = Boolean(user?.addressVerified);
   const savedAddress = user?.address ?? "";
+  const hasMobile = Boolean(user?.mobileNumber);
 
   const limitPercent = useMemo(() => Math.min(100, Math.round((usedCount / limit) * 100)), [usedCount, limit]);
 
@@ -167,8 +180,34 @@ function ProfilePage() {
       formData.append("longitude", String(coords.lng));
     }
     formData.append("addressVerified", String(Boolean(verifyResult?.verified ?? addressVerified)));
+    // Always include contact fields so a profile/address save never wipes them.
+    formData.append("mobileNumber", mobileNumber.trim());
+    formData.append("whatsappSame", String(whatsappSame));
+    formData.append("whatsappNumber", whatsappSame ? "" : whatsappNumber.trim());
     if (includeAvatar && avatarFile) formData.append("avatar", avatarFile);
     return formData;
+  };
+
+  const handleSaveContact = async () => {
+    const cleaned = mobileNumber.replace(/[^\d+]/g, "");
+    if (cleaned.length < 8) {
+      toast.error("Please enter a valid mobile number.");
+      return;
+    }
+    if (!whatsappSame && whatsappNumber.replace(/[^\d+]/g, "").length < 8) {
+      toast.error("Please enter a valid WhatsApp number, or tick 'same as mobile'.");
+      return;
+    }
+    setSavingContact(true);
+    try {
+      const response = await bookhugApi.updateProfile(buildProfileFormData(false));
+      applyUser(response.user);
+      toast.success("Contact details saved.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save your contact details.");
+    } finally {
+      setSavingContact(false);
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -246,6 +285,10 @@ function ProfilePage() {
     event.preventDefault();
     if (limitReached) {
       toast.error(`You've reached your limit of ${limit} books.`);
+      return;
+    }
+    if (!user?.mobileNumber) {
+      toast.error("Please add and save your mobile number above before adding books.");
       return;
     }
     if (!title.trim()) {
@@ -381,6 +424,90 @@ function ProfilePage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Contact details — mobile compulsory */}
+        <Card className="rounded-[2rem] border-border/70 shadow-cute">
+          <CardHeader>
+            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-peach/70 px-3 py-1 text-xs font-semibold text-peach-foreground">
+              <Phone className="size-3.5" /> Contact
+            </div>
+            <CardTitle className="font-display text-3xl">Your contact number</CardTitle>
+            <CardDescription>
+              Your mobile number is <span className="font-semibold text-foreground">required</span> to list books. It stays
+              private — it is only shared with another reader after they pay the small ₹5 connect fee. You can&apos;t add books
+              without it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!user?.mobileNumber ? (
+              <div className="flex items-start gap-3 rounded-3xl bg-butter/60 p-4 text-sm text-butter-foreground">
+                <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                <span>Please add and save your mobile number before adding any books.</span>
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <label htmlFor="mobile" className="text-sm font-medium text-foreground">
+                Mobile number <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="mobile"
+                type="tel"
+                inputMode="tel"
+                value={mobileNumber}
+                onChange={(event) => setMobileNumber(event.target.value)}
+                placeholder="+91 98765 43210"
+                className="h-11 rounded-2xl bg-background"
+                maxLength={20}
+              />
+            </div>
+
+            <label className="flex items-center gap-3 rounded-2xl bg-muted/40 p-3 text-sm font-medium text-foreground">
+              <Checkbox
+                checked={whatsappSame}
+                onCheckedChange={(checked) => setWhatsappSame(checked === true)}
+              />
+              <span className="flex items-center gap-1.5">
+                <MessageCircle className="size-4 text-primary" /> My WhatsApp is the same as my mobile number
+              </span>
+            </label>
+
+            {!whatsappSame ? (
+              <div className="space-y-2">
+                <label htmlFor="whatsapp" className="text-sm font-medium text-foreground">
+                  WhatsApp number
+                </label>
+                <Input
+                  id="whatsapp"
+                  type="tel"
+                  inputMode="tel"
+                  value={whatsappNumber}
+                  onChange={(event) => setWhatsappNumber(event.target.value)}
+                  placeholder="+91 90000 00000"
+                  className="h-11 rounded-2xl bg-background"
+                  maxLength={20}
+                />
+              </div>
+            ) : null}
+
+            <Button
+              type="button"
+              className="rounded-full"
+              onClick={() => void handleSaveContact()}
+              disabled={savingContact}
+            >
+              {savingContact ? (
+                <>
+                  <LoaderCircle className="size-4 animate-spin" /> Saving...
+                </>
+              ) : (
+                "Save contact details"
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+
+
 
         {/* Address & location verification */}
         <Card className="rounded-[2rem] border-border/70 shadow-cute">
@@ -628,11 +755,18 @@ function ProfilePage() {
                   </div>
                 )}
 
+                {!hasMobile ? (
+                  <div className="flex items-start gap-3 rounded-3xl bg-butter/60 p-4 text-sm text-butter-foreground">
+                    <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                    <span>Add your mobile number in the Contact section above to start listing books.</span>
+                  </div>
+                ) : null}
+
                 <Button
                   type="submit"
                   size="lg"
                   className="h-12 w-full rounded-full font-display text-base"
-                  disabled={submitting || limitReached}
+                  disabled={submitting || limitReached || !hasMobile}
                 >
                   {submitting ? (
                     <>
@@ -640,6 +774,8 @@ function ProfilePage() {
                     </>
                   ) : limitReached ? (
                     "Limit reached"
+                  ) : !hasMobile ? (
+                    "Add mobile number first"
                   ) : (
                     "Add book"
                   )}

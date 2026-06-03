@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://hug-a-book-hub.lovable.app/sitemap.xml

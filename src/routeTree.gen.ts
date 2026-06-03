@@ -10,9 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HomeRouteImport } from './routes/home'
+import { Route as HelpRouteImport } from './routes/help'
+import { Route as ComplaintRouteImport } from './routes/complaint'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UPetnameRouteImport } from './routes/u.$petname'
 import { Route as ConnectRequestIdRouteImport } from './routes/connect.$requestId'
@@ -20,6 +23,11 @@ import { Route as ConnectRequestIdRouteImport } from './routes/connect.$requestI
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaymentsRoute = PaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OnboardingRoute = OnboardingRouteImport.update({
@@ -35,6 +43,16 @@ const LoginRoute = LoginRouteImport.update({
 const HomeRoute = HomeRouteImport.update({
   id: '/home',
   path: '/home',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HelpRoute = HelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComplaintRoute = ComplaintRouteImport.update({
+  id: '/complaint',
+  path: '/complaint',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -55,18 +73,24 @@ const ConnectRequestIdRoute = ConnectRequestIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/complaint': typeof ComplaintRoute
+  '/help': typeof HelpRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/payments': typeof PaymentsRoute
   '/profile': typeof ProfileRoute
   '/connect/$requestId': typeof ConnectRequestIdRoute
   '/u/$petname': typeof UPetnameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/complaint': typeof ComplaintRoute
+  '/help': typeof HelpRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/payments': typeof PaymentsRoute
   '/profile': typeof ProfileRoute
   '/connect/$requestId': typeof ConnectRequestIdRoute
   '/u/$petname': typeof UPetnameRoute
@@ -74,9 +98,12 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/complaint': typeof ComplaintRoute
+  '/help': typeof HelpRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/payments': typeof PaymentsRoute
   '/profile': typeof ProfileRoute
   '/connect/$requestId': typeof ConnectRequestIdRoute
   '/u/$petname': typeof UPetnameRoute
@@ -85,27 +112,36 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/complaint'
+    | '/help'
     | '/home'
     | '/login'
     | '/onboarding'
+    | '/payments'
     | '/profile'
     | '/connect/$requestId'
     | '/u/$petname'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/complaint'
+    | '/help'
     | '/home'
     | '/login'
     | '/onboarding'
+    | '/payments'
     | '/profile'
     | '/connect/$requestId'
     | '/u/$petname'
   id:
     | '__root__'
     | '/'
+    | '/complaint'
+    | '/help'
     | '/home'
     | '/login'
     | '/onboarding'
+    | '/payments'
     | '/profile'
     | '/connect/$requestId'
     | '/u/$petname'
@@ -113,9 +149,12 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ComplaintRoute: typeof ComplaintRoute
+  HelpRoute: typeof HelpRoute
   HomeRoute: typeof HomeRoute
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
+  PaymentsRoute: typeof PaymentsRoute
   ProfileRoute: typeof ProfileRoute
   ConnectRequestIdRoute: typeof ConnectRequestIdRoute
   UPetnameRoute: typeof UPetnameRoute
@@ -128,6 +167,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/payments': {
+      id: '/payments'
+      path: '/payments'
+      fullPath: '/payments'
+      preLoaderRoute: typeof PaymentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/onboarding': {
@@ -149,6 +195,20 @@ declare module '@tanstack/react-router' {
       path: '/home'
       fullPath: '/home'
       preLoaderRoute: typeof HomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/help': {
+      id: '/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof HelpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/complaint': {
+      id: '/complaint'
+      path: '/complaint'
+      fullPath: '/complaint'
+      preLoaderRoute: typeof ComplaintRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -177,9 +237,12 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ComplaintRoute: ComplaintRoute,
+  HelpRoute: HelpRoute,
   HomeRoute: HomeRoute,
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
+  PaymentsRoute: PaymentsRoute,
   ProfileRoute: ProfileRoute,
   ConnectRequestIdRoute: ConnectRequestIdRoute,
   UPetnameRoute: UPetnameRoute,
