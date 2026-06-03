@@ -286,6 +286,10 @@ function ProfilePage() {
       toast.error(`You've reached your limit of ${limit} books.`);
       return;
     }
+    if (!user?.mobileNumber) {
+      toast.error("Please add and save your mobile number above before adding books.");
+      return;
+    }
     if (!title.trim()) {
       toast.error("Please enter the book name.");
       return;
