@@ -114,6 +114,9 @@ function ProfilePage() {
     if (user) {
       setBio(user.bio ?? "");
       setAddress(user.address ?? "");
+      setMobileNumber(user.mobileNumber ?? "");
+      setWhatsappSame(user.whatsappSame ?? true);
+      setWhatsappNumber(user.whatsappNumber ?? "");
       if (user.latitude != null && user.longitude != null) {
         setCoords({ lat: Number(user.latitude), lng: Number(user.longitude) });
       }
