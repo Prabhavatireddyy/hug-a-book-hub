@@ -73,7 +73,12 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   return (
     <BookHugAuthProvider>
-      <Outlet />
+      <div className="flex min-h-screen flex-col">
+        <div className="flex-1">
+          <Outlet />
+        </div>
+        <SiteFooter />
+      </div>
       <NotificationCenter />
       <Toaster richColors position="top-right" />
     </BookHugAuthProvider>
