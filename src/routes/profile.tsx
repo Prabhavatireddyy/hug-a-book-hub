@@ -145,6 +145,7 @@ function ProfilePage() {
   const limitReached = usedCount >= limit;
   const addressVerified = Boolean(user?.addressVerified);
   const savedAddress = user?.address ?? "";
+  const hasMobile = Boolean(user?.mobileNumber);
 
   const limitPercent = useMemo(() => Math.min(100, Math.round((usedCount / limit) * 100)), [usedCount, limit]);
 
