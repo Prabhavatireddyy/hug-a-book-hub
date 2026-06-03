@@ -78,6 +78,12 @@ function ProfilePage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
 
+  // Contact details (mobile compulsory + optional separate WhatsApp)
+  const [mobileNumber, setMobileNumber] = useState("");
+  const [whatsappSame, setWhatsappSame] = useState(true);
+  const [whatsappNumber, setWhatsappNumber] = useState("");
+  const [savingContact, setSavingContact] = useState(false);
+
   // Address & verification
   const [address, setAddress] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
