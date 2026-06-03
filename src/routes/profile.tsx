@@ -420,6 +420,90 @@ function ProfilePage() {
           </CardContent>
         </Card>
 
+        {/* Contact details — mobile compulsory */}
+        <Card className="rounded-[2rem] border-border/70 shadow-cute">
+          <CardHeader>
+            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-peach/70 px-3 py-1 text-xs font-semibold text-peach-foreground">
+              <Phone className="size-3.5" /> Contact
+            </div>
+            <CardTitle className="font-display text-3xl">Your contact number</CardTitle>
+            <CardDescription>
+              Your mobile number is <span className="font-semibold text-foreground">required</span> to list books. It stays
+              private — it is only shared with another reader after they pay the small ₹5 connect fee. You can&apos;t add books
+              without it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!user?.mobileNumber ? (
+              <div className="flex items-start gap-3 rounded-3xl bg-butter/60 p-4 text-sm text-butter-foreground">
+                <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                <span>Please add and save your mobile number before adding any books.</span>
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <label htmlFor="mobile" className="text-sm font-medium text-foreground">
+                Mobile number <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="mobile"
+                type="tel"
+                inputMode="tel"
+                value={mobileNumber}
+                onChange={(event) => setMobileNumber(event.target.value)}
+                placeholder="+91 98765 43210"
+                className="h-11 rounded-2xl bg-background"
+                maxLength={20}
+              />
+            </div>
+
+            <label className="flex items-center gap-3 rounded-2xl bg-muted/40 p-3 text-sm font-medium text-foreground">
+              <Checkbox
+                checked={whatsappSame}
+                onCheckedChange={(checked) => setWhatsappSame(checked === true)}
+              />
+              <span className="flex items-center gap-1.5">
+                <MessageCircle className="size-4 text-primary" /> My WhatsApp is the same as my mobile number
+              </span>
+            </label>
+
+            {!whatsappSame ? (
+              <div className="space-y-2">
+                <label htmlFor="whatsapp" className="text-sm font-medium text-foreground">
+                  WhatsApp number
+                </label>
+                <Input
+                  id="whatsapp"
+                  type="tel"
+                  inputMode="tel"
+                  value={whatsappNumber}
+                  onChange={(event) => setWhatsappNumber(event.target.value)}
+                  placeholder="+91 90000 00000"
+                  className="h-11 rounded-2xl bg-background"
+                  maxLength={20}
+                />
+              </div>
+            ) : null}
+
+            <Button
+              type="button"
+              className="rounded-full"
+              onClick={() => void handleSaveContact()}
+              disabled={savingContact}
+            >
+              {savingContact ? (
+                <>
+                  <LoaderCircle className="size-4 animate-spin" /> Saving...
+                </>
+              ) : (
+                "Save contact details"
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+
+
+
         {/* Address & location verification */}
         <Card className="rounded-[2rem] border-border/70 shadow-cute">
           <CardHeader>
