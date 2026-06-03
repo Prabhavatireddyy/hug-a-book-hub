@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HomeRouteImport } from './routes/home'
@@ -22,6 +23,11 @@ import { Route as ConnectRequestIdRouteImport } from './routes/connect.$requestI
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaymentsRoute = PaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OnboardingRoute = OnboardingRouteImport.update({
@@ -72,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/payments': typeof PaymentsRoute
   '/profile': typeof ProfileRoute
   '/connect/$requestId': typeof ConnectRequestIdRoute
   '/u/$petname': typeof UPetnameRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/payments': typeof PaymentsRoute
   '/profile': typeof ProfileRoute
   '/connect/$requestId': typeof ConnectRequestIdRoute
   '/u/$petname': typeof UPetnameRoute
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/payments': typeof PaymentsRoute
   '/profile': typeof ProfileRoute
   '/connect/$requestId': typeof ConnectRequestIdRoute
   '/u/$petname': typeof UPetnameRoute
@@ -108,6 +117,7 @@ export interface FileRouteTypes {
     | '/home'
     | '/login'
     | '/onboarding'
+    | '/payments'
     | '/profile'
     | '/connect/$requestId'
     | '/u/$petname'
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/home'
     | '/login'
     | '/onboarding'
+    | '/payments'
     | '/profile'
     | '/connect/$requestId'
     | '/u/$petname'
@@ -130,6 +141,7 @@ export interface FileRouteTypes {
     | '/home'
     | '/login'
     | '/onboarding'
+    | '/payments'
     | '/profile'
     | '/connect/$requestId'
     | '/u/$petname'
@@ -142,6 +154,7 @@ export interface RootRouteChildren {
   HomeRoute: typeof HomeRoute
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
+  PaymentsRoute: typeof PaymentsRoute
   ProfileRoute: typeof ProfileRoute
   ConnectRequestIdRoute: typeof ConnectRequestIdRoute
   UPetnameRoute: typeof UPetnameRoute
@@ -154,6 +167,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/payments': {
+      id: '/payments'
+      path: '/payments'
+      fullPath: '/payments'
+      preLoaderRoute: typeof PaymentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/onboarding': {
@@ -222,6 +242,7 @@ const rootRouteChildren: RootRouteChildren = {
   HomeRoute: HomeRoute,
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
+  PaymentsRoute: PaymentsRoute,
   ProfileRoute: ProfileRoute,
   ConnectRequestIdRoute: ConnectRequestIdRoute,
   UPetnameRoute: UPetnameRoute,
