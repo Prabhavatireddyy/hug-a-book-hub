@@ -1070,6 +1070,13 @@ app.post("/api/listings", (req, res) => {
       fetchRoleDetails(session.user.id),
       fetchProfileExtras(session.user.id),
     ]);
+
+    // Mobile number is compulsory before listing so buyers can connect.
+    if (!extras.mobileNumber) {
+      return res.status(400).json({
+        error: "Please add your mobile number in My Profile before listing a book.",
+      });
+    }
     const role = roleDetails.role ?? session.user.role ?? "reader";
     const limit = listingLimitFor(role);
     if (extras.listingCount >= limit) {
