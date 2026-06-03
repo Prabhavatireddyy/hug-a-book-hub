@@ -179,8 +179,34 @@ function ProfilePage() {
       formData.append("longitude", String(coords.lng));
     }
     formData.append("addressVerified", String(Boolean(verifyResult?.verified ?? addressVerified)));
+    // Always include contact fields so a profile/address save never wipes them.
+    formData.append("mobileNumber", mobileNumber.trim());
+    formData.append("whatsappSame", String(whatsappSame));
+    formData.append("whatsappNumber", whatsappSame ? "" : whatsappNumber.trim());
     if (includeAvatar && avatarFile) formData.append("avatar", avatarFile);
     return formData;
+  };
+
+  const handleSaveContact = async () => {
+    const cleaned = mobileNumber.replace(/[^\d+]/g, "");
+    if (cleaned.length < 8) {
+      toast.error("Please enter a valid mobile number.");
+      return;
+    }
+    if (!whatsappSame && whatsappNumber.replace(/[^\d+]/g, "").length < 8) {
+      toast.error("Please enter a valid WhatsApp number, or tick 'same as mobile'.");
+      return;
+    }
+    setSavingContact(true);
+    try {
+      const response = await bookhugApi.updateProfile(buildProfileFormData(false));
+      applyUser(response.user);
+      toast.success("Contact details saved.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save your contact details.");
+    } finally {
+      setSavingContact(false);
+    }
   };
 
   const handleSaveProfile = async () => {
