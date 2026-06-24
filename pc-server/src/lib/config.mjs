@@ -38,6 +38,17 @@ export const serverConfig = {
   rapidApiKey: process.env.RAPIDAPI_KEY?.trim() || "",
   // Amount charged to unlock a contact, in paise (₹5 = 500 paise).
   connectionFeePaise: Number(process.env.CONNECTION_FEE_PAISE ?? 500),
+  // Amazon S3 for book/avatar photo uploads (AWS hosting).
+  // On EC2, prefer an attached IAM role over access keys (leave the keys empty).
+  aws: {
+    region: process.env.AWS_REGION?.trim() || "",
+    s3Bucket: process.env.S3_BUCKET?.trim() || "",
+    // Public base URL for objects (S3 REST URL or a CloudFront domain).
+    // Falls back to the standard virtual-hosted S3 URL when not set.
+    s3PublicBaseUrl: process.env.S3_PUBLIC_BASE_URL?.trim() || "",
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID?.trim() || "",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY?.trim() || "",
+  },
 };
 
 export function isGoogleConfigured() {
@@ -54,6 +65,10 @@ export function isGoogleMapsConfigured() {
 
 export function isRazorpayConfigured() {
   return Boolean(serverConfig.razorpay.keyId && serverConfig.razorpay.keySecret);
+}
+
+export function isS3Configured() {
+  return Boolean(serverConfig.aws.region && serverConfig.aws.s3Bucket);
 }
 
 export function isMysqlConfigured() {

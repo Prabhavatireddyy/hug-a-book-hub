@@ -3,8 +3,8 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
 import multer from "multer";
-import { mkdirSync } from "node:fs";
-import { extname } from "node:path";
+import { mkdirSync, writeFile } from "node:fs";
+import { join, extname } from "node:path";
 import { randomUUID, createHmac } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import { demoNotifications, demoProfile, demoSearchResponse } from "./lib/demo-data.mjs";
@@ -13,47 +13,99 @@ import {
   isGoogleConfigured,
   isGoogleMapsConfigured,
   isRazorpayConfigured,
+  isS3Configured,
   serverConfig,
 } from "./lib/config.mjs";
 import { createSession, deleteSession, getSession, updateSessionUser } from "./lib/session-store.mjs";
 
 mkdirSync(serverConfig.uploadsDir, { recursive: true });
 
-const uploadStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, serverConfig.uploadsDir),
-  filename: (_req, file, cb) => {
-    const ext = (extname(file.originalname || "") || ".jpg").toLowerCase();
-    cb(null, `${randomUUID()}${ext}`);
-  },
-});
+// Photos are buffered in memory, then pushed to Amazon S3 (AWS hosting).
+// If S3 isn't configured (e.g. local development) we fall back to disk so
+// nothing breaks while testing on a laptop.
+const imageFileFilter = (_req, file, cb) => {
+  if (file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only image files are allowed."));
+  }
+};
 
 const uploadBookPhoto = multer({
-  storage: uploadStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only image files are allowed."));
-    }
-  },
+  fileFilter: imageFileFilter,
 }).single("photo");
 
 const uploadAvatar = multer({
-  storage: uploadStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only image files are allowed."));
-    }
-  },
+  fileFilter: imageFileFilter,
 }).single("avatar");
 
-function photoUrlFor(filename) {
+// Lazily created S3 client so the module also runs without AWS configured.
+let s3Client = null;
+async function getS3Client() {
+  if (s3Client) return s3Client;
+  const { S3Client } = await import("@aws-sdk/client-s3");
+  s3Client = new S3Client({
+    region: serverConfig.aws.region,
+    // When access keys are omitted the SDK uses the EC2 instance IAM role.
+    ...(serverConfig.aws.accessKeyId && serverConfig.aws.secretAccessKey
+      ? {
+          credentials: {
+            accessKeyId: serverConfig.aws.accessKeyId,
+            secretAccessKey: serverConfig.aws.secretAccessKey,
+          },
+        }
+      : {}),
+  });
+  return s3Client;
+}
+
+function s3PublicUrlFor(key) {
+  const base =
+    serverConfig.aws.s3PublicBaseUrl ||
+    `https://${serverConfig.aws.s3Bucket}.s3.${serverConfig.aws.region}.amazonaws.com`;
+  return `${base.replace(/\/$/, "")}/${key}`;
+}
+
+function localUrlFor(filename) {
   return `${serverConfig.publicBaseUrl.replace(/\/$/, "")}/uploads/${filename}`;
 }
+
+// Saves a multer in-memory file to S3 (preferred) or local disk (fallback),
+// returning the public URL stored in the database.
+async function storeUploadedImage(file, prefix) {
+  if (!file) return null;
+  const ext = (extname(file.originalname || "") || ".jpg").toLowerCase();
+  const key = `${prefix}/${randomUUID()}${ext}`;
+
+  if (isS3Configured()) {
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    await client.send(
+      new PutObjectCommand({
+        Bucket: serverConfig.aws.s3Bucket,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype || "image/jpeg",
+        CacheControl: "public, max-age=31536000, immutable",
+      }),
+    );
+    return s3PublicUrlFor(key);
+  }
+
+  // Local fallback for development without AWS.
+  const filename = key.replace("/", "_");
+  await new Promise((resolve, reject) =>
+    writeFile(join(serverConfig.uploadsDir, filename), file.buffer, (err) =>
+      err ? reject(err) : resolve(),
+    ),
+  );
+  return localUrlFor(filename);
+}
+
 
 // Per-role book listing limits (kept small while the database is young).
 const LISTING_LIMITS = { reader: 20, seller: 100, library: 1000, admin: 5000 };
@@ -658,7 +710,7 @@ app.patch("/api/me/profile", (req, res) => {
     const latitude = Number.isFinite(rawLat) ? rawLat : null;
     const longitude = Number.isFinite(rawLng) ? rawLng : null;
     const addressVerified = String(req.body?.addressVerified) === "true" ? 1 : 0;
-    const avatarUrl = req.file ? photoUrlFor(req.file.filename) : null;
+    const avatarUrl = req.file ? await storeUploadedImage(req.file, "avatars") : null;
 
     const cleanPhone = (value) =>
       typeof value === "string" ? value.replace(/[^\d+]/g, "").slice(0, 20) : "";
@@ -1096,7 +1148,7 @@ app.post("/api/listings", (req, res) => {
       exchangeAddress = extras.address;
     }
 
-    const coverUrl = req.file ? photoUrlFor(req.file.filename) : null;
+    const coverUrl = req.file ? await storeUploadedImage(req.file, "books") : null;
 
     const result = await query(
       `INSERT INTO book_listings (owner_id, title, author, listing_type, price, exchange_address, photo_path, status)
@@ -1459,5 +1511,10 @@ ensureSchemaUpgrades()
   .finally(() => {
     app.listen(serverConfig.port, () => {
       console.log(`BookHug PC server running on ${serverConfig.publicBaseUrl}`);
+      console.log(
+        isS3Configured()
+          ? `Photo storage: Amazon S3 bucket "${serverConfig.aws.s3Bucket}" (${serverConfig.aws.region})`
+          : "Photo storage: local disk (set AWS_REGION + S3_BUCKET to use Amazon S3)",
+      );
     });
   });
