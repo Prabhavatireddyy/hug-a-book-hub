@@ -710,7 +710,7 @@ app.patch("/api/me/profile", (req, res) => {
     const latitude = Number.isFinite(rawLat) ? rawLat : null;
     const longitude = Number.isFinite(rawLng) ? rawLng : null;
     const addressVerified = String(req.body?.addressVerified) === "true" ? 1 : 0;
-    const avatarUrl = req.file ? photoUrlFor(req.file.filename) : null;
+    const avatarUrl = req.file ? await storeUploadedImage(req.file, "avatars") : null;
 
     const cleanPhone = (value) =>
       typeof value === "string" ? value.replace(/[^\d+]/g, "").slice(0, 20) : "";
