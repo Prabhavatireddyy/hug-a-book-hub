@@ -1511,5 +1511,10 @@ ensureSchemaUpgrades()
   .finally(() => {
     app.listen(serverConfig.port, () => {
       console.log(`BookHug PC server running on ${serverConfig.publicBaseUrl}`);
+      console.log(
+        isS3Configured()
+          ? `Photo storage: Amazon S3 bucket "${serverConfig.aws.s3Bucket}" (${serverConfig.aws.region})`
+          : "Photo storage: local disk (set AWS_REGION + S3_BUCKET to use Amazon S3)",
+      );
     });
   });
