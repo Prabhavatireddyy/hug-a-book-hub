@@ -67,6 +67,10 @@ export function isRazorpayConfigured() {
   return Boolean(serverConfig.razorpay.keyId && serverConfig.razorpay.keySecret);
 }
 
+export function isS3Configured() {
+  return Boolean(serverConfig.aws.region && serverConfig.aws.s3Bucket);
+}
+
 export function isMysqlConfigured() {
   return Boolean(
     serverConfig.mysql.host &&
