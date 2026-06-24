@@ -20,41 +20,92 @@ import { createSession, deleteSession, getSession, updateSessionUser } from "./l
 
 mkdirSync(serverConfig.uploadsDir, { recursive: true });
 
-const uploadStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, serverConfig.uploadsDir),
-  filename: (_req, file, cb) => {
-    const ext = (extname(file.originalname || "") || ".jpg").toLowerCase();
-    cb(null, `${randomUUID()}${ext}`);
-  },
-});
+// Photos are buffered in memory, then pushed to Amazon S3 (AWS hosting).
+// If S3 isn't configured (e.g. local development) we fall back to disk so
+// nothing breaks while testing on a laptop.
+const imageFileFilter = (_req, file, cb) => {
+  if (file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only image files are allowed."));
+  }
+};
 
 const uploadBookPhoto = multer({
-  storage: uploadStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only image files are allowed."));
-    }
-  },
+  fileFilter: imageFileFilter,
 }).single("photo");
 
 const uploadAvatar = multer({
-  storage: uploadStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only image files are allowed."));
-    }
-  },
+  fileFilter: imageFileFilter,
 }).single("avatar");
 
-function photoUrlFor(filename) {
+// Lazily created S3 client so the module also runs without AWS configured.
+let s3Client = null;
+async function getS3Client() {
+  if (s3Client) return s3Client;
+  const { S3Client } = await import("@aws-sdk/client-s3");
+  s3Client = new S3Client({
+    region: serverConfig.aws.region,
+    // When access keys are omitted the SDK uses the EC2 instance IAM role.
+    ...(serverConfig.aws.accessKeyId && serverConfig.aws.secretAccessKey
+      ? {
+          credentials: {
+            accessKeyId: serverConfig.aws.accessKeyId,
+            secretAccessKey: serverConfig.aws.secretAccessKey,
+          },
+        }
+      : {}),
+  });
+  return s3Client;
+}
+
+function s3PublicUrlFor(key) {
+  const base =
+    serverConfig.aws.s3PublicBaseUrl ||
+    `https://${serverConfig.aws.s3Bucket}.s3.${serverConfig.aws.region}.amazonaws.com`;
+  return `${base.replace(/\/$/, "")}/${key}`;
+}
+
+function localUrlFor(filename) {
   return `${serverConfig.publicBaseUrl.replace(/\/$/, "")}/uploads/${filename}`;
 }
+
+// Saves a multer in-memory file to S3 (preferred) or local disk (fallback),
+// returning the public URL stored in the database.
+async function storeUploadedImage(file, prefix) {
+  if (!file) return null;
+  const ext = (extname(file.originalname || "") || ".jpg").toLowerCase();
+  const key = `${prefix}/${randomUUID()}${ext}`;
+
+  if (isS3Configured()) {
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getS3Client();
+    await client.send(
+      new PutObjectCommand({
+        Bucket: serverConfig.aws.s3Bucket,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype || "image/jpeg",
+        CacheControl: "public, max-age=31536000, immutable",
+      }),
+    );
+    return s3PublicUrlFor(key);
+  }
+
+  // Local fallback for development without AWS.
+  const filename = key.replace("/", "_");
+  await new Promise((resolve, reject) =>
+    writeFile(join(serverConfig.uploadsDir, filename), file.buffer, (err) =>
+      err ? reject(err) : resolve(),
+    ),
+  );
+  return localUrlFor(filename);
+}
+
 
 // Per-role book listing limits (kept small while the database is young).
 const LISTING_LIMITS = { reader: 20, seller: 100, library: 1000, admin: 5000 };
