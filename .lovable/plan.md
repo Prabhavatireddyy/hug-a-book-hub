@@ -1,59 +1,77 @@
-# BookHug — Payments, Notifications, Maps, Contacts & SEO
+# Move BookHug to AWS (EC2 + RDS MySQL + S3)
 
-Backend stays in `pc-server/` (Express + MySQL on your laptop). Frontend is the TanStack Start app. New laptop secrets go in `pc-server/.env`: `GOOGLE_MAPS_API_KEY`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and a books-price API key (see §6).
+Your app is split in two: the Lovable frontend (stays on Lovable) and the `pc-server/` Express + MySQL backend (currently on your laptop). Because the backend is already a self-contained Node app, moving it to AWS is mostly **deployment + configuration**, with **one real code change** (photo uploads → S3). All app behavior, features, and the workflows we already built stay exactly the same.
 
-## 1. Google geocoding (replace OpenStreetMap)
-- In `server.mjs`, rewrite `geocodeAddress()` to call Google Geocoding API (`maps/api/geocode/json`) using `GOOGLE_MAPS_API_KEY` from config. Keep the same return shape (`latitude`, `longitude`, `label`) so verify-location logic and the 20 km haversine check are unchanged.
-- Add `GOOGLE_MAPS_API_KEY` to `pc-server/src/lib/config.mjs`. Geocoding only — no visible map.
-- If the key is missing, return a clear error telling you to set it in `.env`.
+```text
+Browser ──HTTPS──> Lovable frontend (hug-a-book-hub.lovable.app)
+   │
+   └──HTTPS (api.yourdomain.com)──> EC2 (Node/Express backend)
+                                       ├── Amazon RDS for MySQL  (all data)
+                                       └── Amazon S3            (book/avatar photos)
+```
 
-## 2. Mobile number + WhatsApp (My Profile)
-- DB: add `users.mobile_number VARCHAR(20)`, `users.whatsapp_same TINYINT(1) DEFAULT 1`, `users.whatsapp_number VARCHAR(20)` via the existing idempotent migration block.
-- Profile page: mobile number field + a "Same as WhatsApp" tick. When unticked, a second WhatsApp number field appears. Mobile is **compulsory** (same enforcement as address) — saving and listing books are blocked until it's filled, with inline helper text explaining why ("Buyers reach you on this number after a confirmed, paid request").
-- Extend `PATCH /api/me/profile`, `fetchProfileExtras`, and `SessionUser` type with these fields.
+## What changes in the code
 
-## 3. Notifications bell (top of screen)
-- Replace the floating bell with a header bell + unread badge on Home, Profile, and public profile (shared header). It opens the existing notification sheet.
-- Each request notification becomes interactive:
-  - **For User B (receiver):** "Accept" / "Decline" buttons inline → calls `PATCH /api/requests/:id` (status accepted/rejected).
-  - **For User A (sender):** when B accepts, A gets a notification "✅ B accepted — pay ₹5 to get their contact" with a "Connect & pay" button opening the payment page.
-- Add `GET /api/notifications` already exists; add `PATCH /api/requests/:id` to accept/reject and create the follow-up notification to the sender.
-- Add a "Mark all read" action and persist `is_read`.
+### 1. Photo uploads → Amazon S3 (the main change)
+Today multer writes images to a local `uploads/` folder and serves them at `/uploads`. On AWS that disk is temporary and would lose photos when the server is replaced.
 
-## 4. Connection flow + Razorpay ₹5 payment
-Flow rules:
-- **User → Seller / Library:** no approval needed. A clicks "Connect" → pays ₹5 → instantly gets the owner's mobile + WhatsApp.
-- **User A → User B (reader, buy or exchange):** A sends request → B notified → B Accepts → A notified → A pays ₹5 → A gets B's mobile + WhatsApp. (Address stays private, per your choice.)
-- New `/connect/$requestId` payment page: shows the book, who you're connecting with, ₹5 amount, and a Razorpay checkout (UPI + auto QR + cards built in).
-- Backend endpoints:
-  - `POST /api/payments/order` `{ requestId }` → validates the request is payable (seller/library always; reader only after `accepted`), creates a Razorpay order (₹5 = 500 paise), inserts a `payments` row (`status='created'`).
-  - `POST /api/payments/verify` → verifies Razorpay signature (HMAC with secret), marks payment `paid`, marks the request `contact_unlocked`, and returns the revealed contact (mobile + WhatsApp).
-  - Razorpay SDK added to `pc-server` (`npm i razorpay`); checkout script loaded on the frontend page.
-- DB: new `payments` table (id, payer_id, request_id, amount_paise, currency, razorpay_order_id, razorpay_payment_id, status, created_at) with proper indexes/FKs; add `requests.contact_unlocked TINYINT(1) DEFAULT 0`.
-- After payment, a "Contact unlocked" card shows B's mobile + a one-tap WhatsApp link (`https://wa.me/<number>`), with a clear note on respectful use.
+- Switch multer to in-memory storage and upload the file buffer to S3 using the AWS SDK.
+- `photoUrlFor()` returns the public S3 URL (or CloudFront URL) instead of `/uploads/...`. Since `photo_path`/`avatar_url` already store a full URL, existing read code stays unchanged.
+- Keep the `/uploads` static route only as a harmless fallback (can be removed later).
 
-## 5. Payment history
-- New `/payments` page + header link: lists all the user's payments (book title, who, amount, date, status) from `GET /api/payments/history`.
-- Each paid row re-shows the unlocked contact so they never lose it.
+### 2. Config additions (`pc-server/src/lib/config.mjs`)
+Add an `aws` block read from env: `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` (bucket or CloudFront URL), plus `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (or rely on an EC2 IAM role — preferred, no keys in env). Add an `isS3Configured()` helper.
 
-## 6. Live online prices (right panel)
-- `server.mjs`: add `fetchOnlinePrices(title)` calling a books price API (Amazon/Flipkart via a real-time product-data provider) using an env key. Returns `[{ store, price, url, image? }]`.
-- `GET /api/search` calls it for the query (with a short in-memory cache + timeout) and returns real `onlinePrices`. If the key is missing or the call fails, it **gracefully falls back to smart pre-searched links** (Amazon.in / Flipkart / etc. for the title) so the panel never breaks.
-- Home right panel updated to show live price + store, and works for the current search term (not a fixed demo).
-- I'll tell you exactly which API key to obtain and where to paste it; Amazon's own PA-API needs sales history, so a third-party real-time provider is the practical route.
+### 3. Database → Amazon RDS for MySQL (no code change)
+The code already uses `mysql2` with `MYSQL_*` env vars. Moving to RDS is just pointing those vars at the RDS endpoint. The existing `npm run backend:setup-db` builds the schema, and your in-app idempotent migrations still run on startup.
 
-## 7. Help & Complaint pages
-- `/help`: friendly, self-explaining guide — how search, requests, payments, contact reveal, roles, limits, and location verification work. Written in plain language with sections and FAQs.
-- `/complaint`: form to report fraud/abuse (target pet name, category, description, optional screenshot) → `POST /api/complaints` storing to a new `complaints` table; confirmation + "we review within 48h" message.
-- Both linked from the header/footer.
+### 4. Frontend (one env var)
+Point `VITE_PC_BACKEND_URL` at the new AWS backend domain (e.g. `https://api.yourdomain.com`). Cookies already use `SameSite=None; Secure` over HTTPS and CORS already honors `FRONTEND_ORIGIN`, so cross-site login keeps working. No component changes.
 
-## 8. Polish, cleanup & SEO
-- **Smoothness:** shared header/footer component, consistent rounded cards, subtle transitions, loading skeletons, and inline explanatory microcopy throughout (your main focus — explain things in-place).
-- **Cleanup:** consolidate duplicated header code from Home/Profile into one component; remove unused demo paths and dead placeholder copy; keep `index.tsx` as the landing page.
-- **SEO / AI-search:** per-route `head()` titles + descriptions + canonical (Home, Profile, Help, Complaint, Payments, public profiles), Organization + WebSite JSON-LD in `__root.tsx`, BreadcrumbList + Person schema on public profiles, `public/robots.txt`, and a dynamic `src/routes/sitemap[.]xml.ts`. Semantic headings, single H1 per page, alt text, lazy images.
+### 5. Optional but recommended: DB-backed sessions
+Sessions are currently in-memory, so an EC2 restart logs everyone out. Optionally add a small `sessions` table and back `session-store.mjs` with it for persistence. I'll only do this if you want it.
 
-## Technical notes
-- All money/role/contact checks are enforced server-side (authoritative); the UI mirrors state.
-- Contact (mobile + WhatsApp) is revealed **only** after a `paid` payment on a valid request — never before.
-- Restart the PC server after changes; schema migrations run automatically on startup. New npm package: `razorpay` (server) only.
-- Secrets to add to `pc-server/.env`: `GOOGLE_MAPS_API_KEY`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and the price-API key. I'll point you to each.
+## What you set up in AWS (I'll give exact steps)
+
+1. **RDS MySQL** — create a MySQL instance, note the endpoint/user/password/db name, allow the EC2 security group to connect on port 3306.
+2. **S3 bucket** — create a bucket for photos, set public-read (or CloudFront) for image URLs, and add CORS so the browser can load images.
+3. **EC2 instance** — Ubuntu, install Node, pull the repo, set env vars, run with **pm2** (auto-restart) or systemd. Attach an **IAM role** granting S3 access (so no AWS keys live in env).
+4. **Domain + SSL** — Route 53 hosted zone, an **ACM certificate**, and either an **Application Load Balancer** or **nginx + certbot** in front of the Node app, so `api.yourdomain.com` serves HTTPS. Update Google OAuth callback to the new HTTPS URL.
+
+## Environment variables on EC2 (`.env`)
+```text
+PC_SERVER_PORT=8788
+PUBLIC_BACKEND_URL=https://api.yourdomain.com
+FRONTEND_ORIGIN=https://hug-a-book-hub.lovable.app
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_CALLBACK_URL=https://api.yourdomain.com/api/auth/google/callback
+MYSQL_HOST=<rds-endpoint>
+MYSQL_PORT=3306
+MYSQL_USER=...
+MYSQL_PASSWORD=...
+MYSQL_DATABASE=bookhug
+AWS_REGION=ap-south-1
+S3_BUCKET=bookhug-photos
+S3_PUBLIC_BASE_URL=https://bookhug-photos.s3.ap-south-1.amazonaws.com
+# AWS keys only if NOT using an EC2 IAM role:
+# AWS_ACCESS_KEY_ID=...
+# AWS_SECRET_ACCESS_KEY=...
+GOOGLE_MAPS_API_KEY=...
+RAZORPAY_KEY_ID=...
+RAZORPAY_KEY_SECRET=...
+RAPIDAPI_KEY=...
+```
+
+## Deliverables in this build
+- Add `@aws-sdk/client-s3` to `pc-server`.
+- Rewrite the upload path in `pc-server/src/server.mjs` to push to S3 and return S3 URLs.
+- Extend `pc-server/src/lib/config.mjs` with the AWS/S3 block + helper.
+- Update `pc-server/README.md` with full AWS deployment steps (RDS, S3, EC2, domain/SSL, IAM).
+- Update `.lovable/plan.md` to record the AWS hosting decision.
+- (Optional) DB-backed session store if you confirm you want it.
+
+## Notes
+- Everything else we planned (Google geocoding, Razorpay ₹5 connect, notifications, contacts, live prices, help/complaint/payments pages, SEO) is **unchanged** — only the hosting moves.
+- No Lovable Cloud/Supabase is introduced; your backend stays self-managed, now on AWS.
+- I can't click around your AWS console, so the AWS resource creation (RDS/S3/EC2/Route 53) is done by you following the step-by-step README; I handle all the code and config.
