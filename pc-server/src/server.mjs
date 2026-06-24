@@ -13,6 +13,7 @@ import {
   isGoogleConfigured,
   isGoogleMapsConfigured,
   isRazorpayConfigured,
+  isS3Configured,
   serverConfig,
 } from "./lib/config.mjs";
 import { createSession, deleteSession, getSession, updateSessionUser } from "./lib/session-store.mjs";
