@@ -1148,7 +1148,7 @@ app.post("/api/listings", (req, res) => {
       exchangeAddress = extras.address;
     }
 
-    const coverUrl = req.file ? photoUrlFor(req.file.filename) : null;
+    const coverUrl = req.file ? await storeUploadedImage(req.file, "books") : null;
 
     const result = await query(
       `INSERT INTO book_listings (owner_id, title, author, listing_type, price, exchange_address, photo_path, status)
